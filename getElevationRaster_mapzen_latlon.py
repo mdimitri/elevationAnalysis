@@ -171,4 +171,4 @@ north = 42.3739044 + 0.05
 # north = 28.10 + 0.05
 
 output_dir = __import__("datetime").datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir=output_dir, max_workers=32)
+fetch_and_process_heightmap(west, south, east, north, zoom=12, output_dir=output_dir, max_workers=32)

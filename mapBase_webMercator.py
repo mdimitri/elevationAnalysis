@@ -329,7 +329,6 @@ def get_water_bodies_osm2geojson(lat1, lat2, lon1, lon2):
         f'(.a;>;rel.a;>;);'
         f'out meta;'
     )
-
     def parse_elements(elements):
         geojson = osm2geojson.json2geojson({"elements": elements})
         return gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
@@ -484,7 +483,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         print("Terrain exaggeration...")
         # # increase colorization in locally flat regions
         pixelsPerDegree = map_s.shape[0] / np.abs(south-north)
-        kernel_size = 0.0125 # in degrees
+        kernel_size = 0.0125 / 2 # in degrees
         kernel_size = int(kernel_size * pixelsPerDegree) # in pixels
         unsharp_mask = lambda img, sigma=1, strength=1.2: np.clip(
             (((img - img.min()) / (img.max() - img.min())) + strength * (
@@ -492,7 +491,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     (img - img.min()) / (img.max() - img.min()), sigma))) * (img.max() - img.min()) + img.min(),
             img.min(), img.max()
         )
-        ax.imshow(unsharp_mask(np.copy(map_s), sigma=kernel_size, strength=1.0), extent=[west, east, south, north], origin='upper', cmap=gamma_cmap, vmin=0, interpolation='bilinear')
+        ax.imshow(unsharp_mask(np.copy(map_s), sigma=kernel_size, strength=1.0), extent=[west, east, south, north], origin='upper', cmap=gamma_cmap, vmin=-150, interpolation='bilinear')
     else:
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
                   cmap=gamma_cmap, vmin=-150, interpolation='bilinear')
@@ -589,7 +588,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         fontfamily='serif',
                         style='italic',
                         color=(0, 0.3, 0.6),
-                        alpha=0.7,
+                        alpha=0.8,
                         ha='center',
                         va='center',
                         rasterized = True,
@@ -915,7 +914,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
     # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
-    rasterPath = r"./2025-08-14_12-52-02/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz"  # NMK hires
+    rasterPath = r"./2025-08-14_14-45-40/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
 
     print("Starting map generation process...")
 
