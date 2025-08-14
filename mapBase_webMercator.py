@@ -17,7 +17,7 @@ from shapely.geometry import box
 from shapely.ops import transform as shapely_transform
 from skimage import exposure
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from scipy.spatial import cKDTree
 
 # colors = [
 #     '#2f4f4f',  # dark slate gray (deep water)
@@ -39,8 +39,6 @@ cmap = plt.get_cmap('terrain')
 x = np.linspace(0.0, 1, 5000)
 colors = cmap(x ** gamma)
 gamma_cmap = LinearSegmentedColormap.from_list('gamma_terrain', colors, N=5000)
-
-
 def haversine_distance(lat1, lon1, lat2, lon2, radius=6371.0):
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -79,7 +77,6 @@ def reproject_npz_to_epsg4326(npz_path):
         'resolution_lon_deg': dst_transform.a,
         'resolution_lat_deg': -dst_transform.e
     }
-
 
 def _fetch_data_from_osm(query, bounds, geometry_handler, desc):
     # overpass_url = "https://overpass-api.de/api/interpreter"
@@ -469,19 +466,19 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
                               scale, resolution, exagerateTerrain):
     fig_width, fig_height = scale * 10, scale * 10
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
 
-    resolutionFactor = 1# * 1000 / dpi
+    resolutionFactor = scale # * 1000 / dpi
     settlementsFontSize   = 1 * resolutionFactor# master for the largest font, labels of smaller settlements take a fraction of this size
-    airportsFontSize      = 0.4 * resolutionFactor
-    contoursFontSize      = 0.2 * resolutionFactor
-    mountainPeaksFontSize = 0.2 * resolutionFactor
-    riverLabelFontSize    = 0.2 * resolutionFactor
-    waterBodiesFontSize   = 0.2 * resolutionFactor
+    airportsFontSize      = 0.5 * resolutionFactor
+    contoursFontSize      = 0.25 * resolutionFactor
+    mountainPeaksFontSize = 0.4 * resolutionFactor
+    riverLabelFontSize    = 0.4 * resolutionFactor
+    waterBodiesFontSize   = 0.4 * resolutionFactor
 
     airportMarkerSize       = 1 * resolutionFactor
     settlementMarkerSize    = .5 * resolutionFactor
-    mountainPeaksMarkerSize = .5 * resolutionFactor
+    mountainPeaksMarkerSize = .2 * resolutionFactor
 
     if exagerateTerrain:
         print("Terrain exaggeration...")
@@ -500,29 +497,25 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
                   cmap=gamma_cmap, vmin=-150, interpolation='bilinear')
 
-    # print("Plotting contours...")
-    # map_s_smooth = map_s # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
-    # x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
-    # X, Y = np.meshgrid(x, y)
-    # min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
-    # min_val = 0
-    # max_val = max_val // 100 * 100 + 100
-    #
-    # levels_mini = np.arange(min_val, max_val, 20)
-    # levels_thin = np.arange(min_val, max_val, 100)
-    # # levels_thick = np.arange(min_val, max_val, 500)
-    #
+    print("Plotting contours...")
+    map_s_smooth = map_s # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
+    x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
+    X, Y = np.meshgrid(x, y)
+    min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
+    min_val = 0
+    max_val = max_val // 100 * 100 + 100
+
+    levels_mini = np.arange(min_val, max_val, 20)
+    levels_thin = np.arange(min_val, max_val, 100)
+    # levels_thick = np.arange(min_val, max_val, 500)
+
     # print("Drawing mini contours with very thin lines...");
-    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.55', alpha=0.3, linewidths=0.03)
+    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.55', alpha=0.4, linewidths=0.03)
     # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
     # print("Drawing thin contours with thin lines...");
-    # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.55', alpha=0.3, linewidths=0.05)
+    # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.55', alpha=0.4, linewidths=0.05)
     # print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
-    # # print("Drawing thick contours with thicker lines...");
-    # # contours_thick = ax.contour(X, Y, map_s_smooth, levels=levels_thick, colors='0.5', alpha=0.3, linewidths=0.1)
-    # # print(f"Thick contours drawn: {len(contours_thick.collections)} levels")
-    #
-    # max_distance_km = 3.0  # 3 km spacing
+    # max_distance_km = 2.0  # 2 km spacing
     # for level, collection in tqdm(zip(contours_thin.levels, contours_thin.collections),
     #                               total=len(contours_thin.levels),
     #                               desc="Drawing contour labels", dynamic_ncols=True, leave=False):
@@ -565,46 +558,48 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     #     structures_gdf.plot(ax=ax, edgecolor='0.4', facecolor='0.6', alpha=0.5, linewidth=0.05)
     #     ax.collections[-1].set_rasterized(True)
 
-    print("Plotting water bodies...")
-    if water_bodies_gdf is not None and not water_bodies_gdf.empty:
-        water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96), edgecolor=(0.42, 0.7, 0.84), linewidth=0.1, zorder=3)
-        ax.collections[-1].set_rasterized(True)
-        def has_valid_water_name(tags):
-            if not isinstance(tags, dict):
-                return False
-            name = tags.get("name")
-            if not name:
-                return False
-            natural = tags.get("natural", "").lower()
-            water = tags.get("water", "").lower()
-            wtype = tags.get("type", "").lower()
-            # Check for relevant water bodies:
-            relevant_types = ["lake", "reservoir", "artificial", "glacial", "pond", "reservoir", "sea", "ocean"]
-            if natural == "water":
-                # Accept if water or type tag matches relevant keywords
-                if any(t in water for t in relevant_types) or any(
-                        t in wtype for t in relevant_types) or water == "" or wtype == "":
-                    return True
-            return False
-        water_names_gdf = water_bodies_gdf[water_bodies_gdf["tags"].apply(has_valid_water_name)]
-        for _, row in water_names_gdf.iterrows():
-            label_point = row.geometry.centroid
-            if (west <= label_point.x <= east) and (south <= label_point.y <= north):
-                name = row["tags"]["name"].replace("/", "\n")
-                name = "\n".join(re.split(r"\s+", name.strip())) if len(re.split(r"\s+", name.strip())) == 2 else name
-                ax.text(label_point.x, label_point.y, name,
-                        fontsize=waterBodiesFontSize,
-                        fontfamily='serif',
-                        style='italic',
-                        color=(0, 0.3, 0.6),
-                        alpha=0.7,
-                        ha='center',
-                        va='center',
-                        rasterized = True,
-                        zorder=4)
+    # print("Plotting water bodies...")
+    # if water_bodies_gdf is not None and not water_bodies_gdf.empty:
+    #     water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96), edgecolor=(0.42, 0.7, 0.84), linewidth=0.1, zorder=3)
+    #     ax.collections[-1].set_rasterized(True)
+    #     def has_valid_water_name(tags):
+    #         if not isinstance(tags, dict):
+    #             return False
+    #         name = tags.get("name")
+    #         if not name:
+    #             return False
+    #         natural = tags.get("natural", "").lower()
+    #         water = tags.get("water", "").lower()
+    #         wtype = tags.get("type", "").lower()
+    #         # Check for relevant water bodies:
+    #         relevant_types = ["lake", "reservoir", "artificial", "glacial", "pond", "reservoir", "sea", "ocean"]
+    #         if natural == "water":
+    #             # Accept if water or type tag matches relevant keywords
+    #             if any(t in water for t in relevant_types) or any(
+    #                     t in wtype for t in relevant_types) or water == "" or wtype == "":
+    #                 return True
+    #         return False
+    #     water_names_gdf = water_bodies_gdf[water_bodies_gdf["tags"].apply(has_valid_water_name)]
+    #     for _, row in water_names_gdf.iterrows():
+    #         label_point = row.geometry.centroid
+    #         if (west <= label_point.x <= east) and (south <= label_point.y <= north):
+    #             name = row["tags"]["name"].replace("/", "\n")
+    #             name = "\n".join(re.split(r"\s+", name.strip())) if len(re.split(r"\s+", name.strip())) == 2 else name
+    #             ax.text(label_point.x, label_point.y, name,
+    #                     fontsize=waterBodiesFontSize,
+    #                     fontfamily='serif',
+    #                     style='italic',
+    #                     color=(0, 0.3, 0.6),
+    #                     alpha=0.7,
+    #                     ha='center',
+    #                     va='center',
+    #                     rasterized = True,
+    #                     zorder=4)
 
     print("Plotting rivers and their labels...")
-    label_interval = 0.1
+    label_step_km = 1.5  # candidate labels every 500m
+    max_distance_km = 1.5  # minimum distance between river labels
+
     if rivers_gdf is not None and not rivers_gdf.empty:
         rivers_only = rivers_gdf[rivers_gdf["waterway"].isin(["river", "stream"])]
         smaller_waterways = rivers_gdf[
@@ -621,7 +616,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             ax.collections[-1].set_rasterized(True)
 
             placed_river_labels = []
-            min_label_distance_map_units = 0.006
 
             for _, row in tqdm(rivers_only.iterrows(), total=len(rivers_only), desc="Labeling rivers",
                                dynamic_ncols=True, leave=False):
@@ -636,27 +630,32 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     if len(coords) < 2:
                         continue
 
-                    cumlen = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(coords, axis=0), axis=1))])
-                    window = 5  # number of points before and after for smoothing
-                    for pos in np.arange(0, cumlen[-1], label_interval):
-                        idx = min(np.searchsorted(cumlen, pos), len(coords) - 1)
+                    # compute cumulative distance along the line in km
+                    cumlen_km = [0.0]
+                    for (x1, y1), (x2, y2) in zip(coords[:-1], coords[1:]):
+                        cumlen_km.append(cumlen_km[-1] + haversine_distance(y1, x1, y2, x2))
+                    cumlen_km = np.array(cumlen_km)
+
+                    window = 5  # smoothing for angle
+                    pos = 0.0
+                    while pos <= cumlen_km[-1]:
+                        idx = np.searchsorted(cumlen_km, pos)
+                        idx = min(idx, len(coords) - 1)
                         x, y = coords[idx]
 
-                        # Determine indices for angle calculation window
+                        # compute angle for label rotation
                         start_idx = max(idx - window, 0)
                         end_idx = min(idx + window, len(coords) - 1)
-
                         p1 = coords[start_idx]
                         p2 = coords[end_idx]
-
                         angle = math.degrees(math.atan2(p2[1] - p1[1], p2[0] - p1[0]))
                         if angle < -90:
                             angle += 180
                         elif angle > 90:
                             angle -= 180
 
-                        if all(math.hypot(x - px, y - py) >= min_label_distance_map_units for px, py in
-                               placed_river_labels):
+                        # check distance to all previously placed river labels
+                        if all(haversine_distance(y, x, py, px) >= max_distance_km for py, px in placed_river_labels):
                             ax.text(
                                 max(west, min(x, east)),
                                 max(south, min(y, north)),
@@ -670,9 +669,11 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                                 style='italic',
                                 fontfamily='serif',
                                 rotation=angle,
-                                rasterized = True,
+                                rasterized=True,
                             )
-                            placed_river_labels.append((x, y))
+                            placed_river_labels.append((y, x))  # store as (lat, lon)
+
+                        pos += label_step_km  # move to next candidate along river
 
         if not smaller_waterways.empty:
             smaller_waterways.plot(
@@ -759,8 +760,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         railroads_gdf.plot(
             ax=ax,
             color='black',
-            linewidth=0.075,
-            alpha=0.2,
+            linewidth=0.2,
+            alpha=0.3,
             linestyle=(0, (2, 2)),  # long dashes: 2 on, 2 off
             zorder=5
         )
@@ -769,7 +770,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         railroads_gdf.plot(
             ax=ax,
             color='gray',
-            linewidth=0.075,
+            linewidth=0.2,
             alpha=0.4,
             zorder=4
         )
@@ -782,9 +783,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         settlement_types_map = {
             "city":    {"settlementMarkerSize": settlementMarkerSize,         "settlementsFontSize": settlementsFontSize,         "style":'normal', "color":[0.1,0.1,0.1]},
             "town":    {"settlementMarkerSize": settlementMarkerSize * 0.8,   "settlementsFontSize": settlementsFontSize * 0.8,   "style":'normal', "color":[0.1,0.1,0.1]},
-            "village": {"settlementMarkerSize": settlementMarkerSize * 0.5,   "settlementsFontSize": settlementsFontSize * 0.4,   "style":'normal', "color":[0.1,0.1,0.1]},
-            "suburb":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.25,   "style":'italic', "color":[0.25,0.25,0.25]},
-            "hamlet":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.25,   "style":'italic', "color":[0.25,0.25,0.25]}
+            "village": {"settlementMarkerSize": settlementMarkerSize * 0.4,   "settlementsFontSize": settlementsFontSize * 0.5,   "style":'normal', "color":[0.1,0.1,0.1]},
+            "suburb":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.3,   "style":'italic', "color":[0.25,0.25,0.25]},
+            "hamlet":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.3,   "style":'italic', "color":[0.25,0.25,0.25]}
         }
 
         # Define which POI categories you want to plot from the 'type' column
@@ -865,7 +866,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     # --- Plot country boundaries ---
     print("Plotting country boundaries...")
     if country_boundaries_gdf is not None and not country_boundaries_gdf.empty:
-        country_boundaries_gdf.plot(
+        country_boundaries_gdf.plot( # red thick line
             ax=ax,
             facecolor='none',
             edgecolor=(0.7, 0.2, 0.2),
@@ -873,6 +874,16 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             alpha=.5,
             linestyle='-',
             zorder=10
+        )
+        ax.collections[-1].set_rasterized(True)
+        country_boundaries_gdf.plot( # black dashed thin line
+            ax=ax,
+            facecolor='none',
+            edgecolor=(0.1, 0.1, 0.1),
+            linewidth=.25,
+            alpha=.9,
+            linestyle=(0, (3,5,1,5)), # dashdotted
+            zorder=11
         )
         ax.collections[-1].set_rasterized(True)
 
@@ -898,12 +909,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
     rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
-    # r"./2025-08-12_21-52-35/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz") # NMK hires
-    #     r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz") # NMK lowres
-        # r"./2025-08-12_23-31-57/heightmap_z11_lon_20.2152_24.9606_lat_39.6398_42.5528_reslon_0.000687_reslat_0.000517.npz") # MK midres
-        # r"2025-08-12_17-27-28\heightmap_z11_lon_2.4613_6.5036_lat_49.3826_51.6178_reslon_0.000687_reslat_0.000437.npz") # bel
-    # r"2025-08-12_17-00-45\heightmap_z11_lon_-160.3122_-154.6878_lat_18.6466_22.4310_reslon_0.000687_reslat_0.000643.npz") # hawaii
-    #     r"2025-08-12_18-00-08\heightmap_z12_lon_86.2209_87.2752_lat_27.4499_28.2268_reslon_0.000343_reslat_0.000304.npz")  # bel
+    # rasterPath = r"./2025-08-14_12-52-02/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz"  # NMK hires
 
     print("Starting map generation process...")
 
@@ -934,7 +940,8 @@ def main():
     airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
-    scale, dpi = 1, int(600) # 1, 2, 1200
+    scale, dpi = 4, int(300) # 4, 800
+    # We have to use a scaling trick in order to render small fonts (less than 1pt)
     exagerateTerrain = False
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north,
                                     east, dpi=dpi, scale=scale, resolution=resolution, exagerateTerrain=exagerateTerrain)
@@ -944,7 +951,7 @@ def main():
         f'_E={format(east, ".3f").replace(".", ",")}'
         f'_W={format(west, ".3f").replace(".", ",")}'
         f'_N={format(north, ".3f").replace(".", ",")}'
-        f'_S={format(south, ".3f").replace(".", ",")}.pdf'
+        f'_S={format(south, ".3f").replace(".", ",")}.png'
     )
     print(f"Saving map to {output_filename}...")
     start_time = time.time()
