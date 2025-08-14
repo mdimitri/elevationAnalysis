@@ -448,8 +448,9 @@ def get_mountain_peaks_osm2geojson(lat1, lat2, lon1, lon2):
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "mountain peaks")
 
 
-def load_or_fetch(filename_prefix, south, north, west, east, fetch_func):
+def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_func):
     filename = f"{filename_prefix}_s{south:.2f}_n{north:.2f}_w{west:.2f}_e{east:.2f}.pkl"
+    filename = os.path.join(os.path.dirname(rasterPath), filename)
     if os.path.exists(filename):
         print(f"Loading cached data for {filename_prefix} from {filename}")
         with open(filename, 'rb') as f:
@@ -895,15 +896,17 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 
 def main():
-    print("Starting map generation process...")
-
-    elev_4326, meta_4326 = reproject_npz_to_epsg4326(
-        # r"./2025-08-12_21-52-35/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz") # NMK hires
-        r"./2025-08-12_21-51-55/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz") # NMK lowres
+    rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
+    # r"./2025-08-12_21-52-35/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz") # NMK hires
+    #     r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz") # NMK lowres
         # r"./2025-08-12_23-31-57/heightmap_z11_lon_20.2152_24.9606_lat_39.6398_42.5528_reslon_0.000687_reslat_0.000517.npz") # MK midres
         # r"2025-08-12_17-27-28\heightmap_z11_lon_2.4613_6.5036_lat_49.3826_51.6178_reslon_0.000687_reslat_0.000437.npz") # bel
     # r"2025-08-12_17-00-45\heightmap_z11_lon_-160.3122_-154.6878_lat_18.6466_22.4310_reslon_0.000687_reslat_0.000643.npz") # hawaii
     #     r"2025-08-12_18-00-08\heightmap_z12_lon_86.2209_87.2752_lat_27.4499_28.2268_reslon_0.000343_reslat_0.000304.npz")  # bel
+
+    print("Starting map generation process...")
+
+    elev_4326, meta_4326 = reproject_npz_to_epsg4326(rasterPath)
 
     map_data = elev_4326
     south = meta_4326['south']
@@ -913,28 +916,6 @@ def main():
     resolution = meta_4326['resolution_lon_deg']
 
     print("Raster and metadata loaded!")
-
-    # data = np.load(r"2025-08-11_11-14-53\heightmap_z9_lon_20.3920_23.2018_lat_40.4480_42.5521_reslon_0.002747_reslat_0.002057.npz")
-    # map_data = data['elevations']  # 2D numpy array
-    # south = data['south'].item()  # scalar float
-    # north = data['north'].item()
-    # west = data['west'].item()
-    # east = data['east'].item()
-    # # resolution = data['resolution'].item()
-
-
-    # map_data = np.load('mk_corrected.npy').T
-    # map_data -= -28510.299
-    # map_data /= ((94022.3 + 28510.299) / 2489)
-    # subsample = 2
-    # map_s = map_data[::subsample, ::subsample]
-    # # lat = np.load('latitudes.npy')
-    # # lon = np.load('longitudes.npy')
-    # # south = lat[-1][0]
-    # # north = lat[0][0]
-    # # west = lon[0][0]
-    # # east = lon[-1][0]
-
     subsample = 1
     map_s = map_data[::subsample, ::subsample]
 
@@ -942,15 +923,15 @@ def main():
 
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
 
-    places_gdf = load_or_fetch("places", south, north, west, east, get_places_from_osm)
-    roads_gdf = load_or_fetch("roads", south, north, west, east, get_roads_from_osm)
-    structures_gdf = load_or_fetch("structures", south, north, west, east, get_structures_from_osm)
-    rivers_gdf = load_or_fetch("rivers", south, north, west, east, get_rivers_from_osm)
-    water_bodies_gdf = load_or_fetch("water_bodies", south, north, west, east, get_water_bodies_osm2geojson)
-    mountain_peaks_gdf = load_or_fetch("mountain_peaks", south, north, west, east, get_mountain_peaks_osm2geojson)
-    railroads_gdf = load_or_fetch("railroads", south, north, west, east, get_railroads_osm2geojson)
-    airports_gdf = load_or_fetch("airports", south, north, west, east, get_airports_osm2geojson)
-    country_boundaries_gdf = load_or_fetch("country_boundaries", south, north, west, east, get_country_boundaries_from_osm)
+    places_gdf             = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
+    roads_gdf              = load_or_fetch("roads", rasterPath, south, north, west, east, get_roads_from_osm)
+    structures_gdf         = load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
+    rivers_gdf             = load_or_fetch("rivers", rasterPath, south, north, west, east, get_rivers_from_osm)
+    water_bodies_gdf       = load_or_fetch("water_bodies", rasterPath, south, north, west, east, get_water_bodies_osm2geojson)
+    mountain_peaks_gdf     = load_or_fetch("mountain_peaks", rasterPath, south, north, west, east, get_mountain_peaks_osm2geojson)
+    railroads_gdf          = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
+    airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
+    country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
     scale, dpi = 1, int(2000) # 1, 2, 1200
     exagerateTerrain = False

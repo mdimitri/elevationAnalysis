@@ -128,17 +128,17 @@ def fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir="h
 
 
 # Example run
-# ## north macedonia
-# west = 20.4529023 - 0.05
-# south = 40.852478 - 0.05
-# east = 23.034051 + 0.05
-# north = 42.3739044 + 0.05
+## north macedonia
+west = 20.4529023 - 0.05
+south = 40.852478 - 0.05
+east = 23.034051 + 0.05
+north = 42.3739044 + 0.05
 
-## macedonia
-west = 20.4 - 0.05     # 20.35°E
-south = 39.7 - 0.05    # 38.95°N
-east = 24.8 + 0.05     # 24.55°E
-north = 42.5 + 0.05    # 42.55°N
+# ## macedonia
+# west = 20.4 - 0.05     # 20.35°E
+# south = 39.7 - 0.05    # 38.95°N
+# east = 24.8 + 0.05     # 24.55°E
+# north = 42.5 + 0.05    # 42.55°N
 
 # ## belgium
 # west = 2.54 - 0.05
