@@ -469,7 +469,7 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
                               scale, resolution, exagerateTerrain):
     fig_width, fig_height = scale * 10, scale * 10
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
 
     resolutionFactor = 1# * 1000 / dpi
     settlementsFontSize   = 1 * resolutionFactor# master for the largest font, labels of smaller settlements take a fraction of this size
@@ -780,11 +780,11 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         # Define styles for settlement places (city, town, village)
         # These now use the 'type' column, as it's consistently generated
         settlement_types_map = {
-            "city":    {"size_scale": settlementMarkerSize,         "text_scale_factor": settlementsFontSize,         "style":'normal', "color":[0.1,0.1,0.1]},
-            "town":    {"size_scale": settlementMarkerSize * 0.8,   "text_scale_factor": settlementsFontSize * 0.8,   "style":'normal', "color":[0.1,0.1,0.1]},
-            "village": {"size_scale": settlementMarkerSize * 0.5,   "text_scale_factor": settlementsFontSize * 0.4,   "style":'normal', "color":[0.1,0.1,0.1]},
-            "suburb":  {"size_scale": settlementMarkerSize * 0,     "text_scale_factor": settlementsFontSize * 0.25,   "style":'italic', "color":[0.25,0.25,0.25]},
-            "hamlet":  {"size_scale": settlementMarkerSize * 0,     "text_scale_factor": settlementsFontSize * 0.25,   "style":'italic', "color":[0.25,0.25,0.25]}
+            "city":    {"settlementMarkerSize": settlementMarkerSize,         "settlementsFontSize": settlementsFontSize,         "style":'normal', "color":[0.1,0.1,0.1]},
+            "town":    {"settlementMarkerSize": settlementMarkerSize * 0.8,   "settlementsFontSize": settlementsFontSize * 0.8,   "style":'normal', "color":[0.1,0.1,0.1]},
+            "village": {"settlementMarkerSize": settlementMarkerSize * 0.5,   "settlementsFontSize": settlementsFontSize * 0.4,   "style":'normal', "color":[0.1,0.1,0.1]},
+            "suburb":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.25,   "style":'italic', "color":[0.25,0.25,0.25]},
+            "hamlet":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.25,   "style":'italic', "color":[0.25,0.25,0.25]}
         }
 
         # Define which POI categories you want to plot from the 'type' column
@@ -799,15 +799,16 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
         # --- Logic for Cities, Towns, Villages (using 'type' for filtering) ---
         if not settlement_places.empty:
-            for place_type, scales in tqdm(settlement_types_map.items(), desc="Drawing settlements", dynamic_ncols=True,
-                                           leave=False):
+            pbar = tqdm(settlement_types_map.items(), dynamic_ncols=True, leave=False)
+            for place_type, scales in pbar:
+                pbar.set_description(f"Drawing settlements {place_type}"); pbar.update(1)
                 subset = settlement_places[settlement_places["type"] == place_type]
                 if not subset.empty:
-                    marker_size = scales["size_scale"] ** 2
-                    label_size = scales["text_scale_factor"]
+                    marker_size = scales["settlementMarkerSize"] ** 2
+                    label_size = scales["settlementsFontSize"]
                     text_style = scales['style']
                     color = scales['color']
-                    ax.scatter(subset.geometry.x, subset.geometry.y, s=marker_size, c=[0.1, 0.1, 0.1], zorder=6,
+                    ax.scatter(subset.geometry.x, subset.geometry.y, s=marker_size, color=(0.1, 0.1, 0.1), zorder=6,
                                linewidths=0)
                     for _, row in subset.iterrows():
                         if row.get("name"):  # Only label if a name exists
@@ -933,7 +934,7 @@ def main():
     airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
-    scale, dpi = 1, int(2000) # 1, 2, 1200
+    scale, dpi = 1, int(600) # 1, 2, 1200
     exagerateTerrain = False
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north,
                                     east, dpi=dpi, scale=scale, resolution=resolution, exagerateTerrain=exagerateTerrain)
@@ -943,7 +944,7 @@ def main():
         f'_E={format(east, ".3f").replace(".", ",")}'
         f'_W={format(west, ".3f").replace(".", ",")}'
         f'_N={format(north, ".3f").replace(".", ",")}'
-        f'_S={format(south, ".3f").replace(".", ",")}.png'
+        f'_S={format(south, ".3f").replace(".", ",")}.pdf'
     )
     print(f"Saving map to {output_filename}...")
     start_time = time.time()
