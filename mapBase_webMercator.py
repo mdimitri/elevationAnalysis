@@ -507,98 +507,98 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
     levels_mini = np.arange(min_val, max_val, 20)
     levels_thin = np.arange(min_val, max_val, 100)
-    # levels_thick = np.arange(min_val, max_val, 500)
 
-    # print("Drawing mini contours with very thin lines...");
-    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.55', alpha=0.4, linewidths=0.03)
-    # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
-    # print("Drawing thin contours with thin lines...");
-    # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.55', alpha=0.4, linewidths=0.05)
-    # print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
-    # max_distance_km = 2.0  # 2 km spacing
-    # for level, collection in tqdm(zip(contours_thin.levels, contours_thin.collections),
-    #                               total=len(contours_thin.levels),
-    #                               desc="Drawing contour labels", dynamic_ncols=True, leave=False):
-    #     collection.set_rasterized(True)
-    #     for path in collection.get_paths():
-    #         vertices = path.vertices
-    #         if len(vertices) < 2:
-    #             continue
-    #
-    #         deltas = [
-    #             haversine_distance(lat1, lon1, lat2, lon2)
-    #             for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
-    #         ]
-    #
-    #         cum_dist = 0.0
-    #         for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
-    #             cum_dist += seg_len
-    #             if cum_dist >= max_distance_km:
-    #                 if cum_dist <= max_distance_km * 1.5: # avoid plotting markers between abruptly stopped contours
-    #                     x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
-    #
-    #                     # Calculate slope angle
-    #                     angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-    #                     if angle > 90:
-    #                         angle -= 180
-    #                     elif angle < -90:
-    #                         angle += 180
-    #
-    #                     ax.text(x_mid, y_mid, f"{level:.0f}",
-    #                             fontsize=contoursFontSize,
-    #                             color='0.55', alpha=0.5,
-    #                             ha='center', va='center',
-    #                             rotation=angle, rotation_mode='anchor',
-    #                             zorder=1, rasterized=True)
-    #                 cum_dist = 0.0
-    # print("Finished labeling contours.")
+    print("Drawing mini contours with very thin lines...");
+    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.55', alpha=0.4, linewidths=0.03)
+    print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
+    print("Drawing thin contours with thin lines...");
+    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.55', alpha=0.4, linewidths=0.05)
+    print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
+    max_distance_km = 2.0  # 2 km spacing
+    for level, collection in tqdm(zip(contours_thin.levels, contours_thin.collections),
+                                  total=len(contours_thin.levels),
+                                  desc="Drawing contour labels", dynamic_ncols=True, leave=False):
+        collection.set_rasterized(True)
+        for path in collection.get_paths():
+            vertices = path.vertices
+            if len(vertices) < 2:
+                continue
 
-    # print("Plotting structures...")
-    # if structures_gdf is not None and not structures_gdf.empty:
-    #     structures_gdf.plot(ax=ax, edgecolor='0.4', facecolor='0.6', alpha=0.5, linewidth=0.05)
-    #     ax.collections[-1].set_rasterized(True)
+            deltas = [
+                haversine_distance(lat1, lon1, lat2, lon2)
+                for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
+            ]
 
-    # print("Plotting water bodies...")
-    # if water_bodies_gdf is not None and not water_bodies_gdf.empty:
-    #     water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96), edgecolor=(0.42, 0.7, 0.84), linewidth=0.1, zorder=3)
-    #     ax.collections[-1].set_rasterized(True)
-    #     def has_valid_water_name(tags):
-    #         if not isinstance(tags, dict):
-    #             return False
-    #         name = tags.get("name")
-    #         if not name:
-    #             return False
-    #         natural = tags.get("natural", "").lower()
-    #         water = tags.get("water", "").lower()
-    #         wtype = tags.get("type", "").lower()
-    #         # Check for relevant water bodies:
-    #         relevant_types = ["lake", "reservoir", "artificial", "glacial", "pond", "reservoir", "sea", "ocean"]
-    #         if natural == "water":
-    #             # Accept if water or type tag matches relevant keywords
-    #             if any(t in water for t in relevant_types) or any(
-    #                     t in wtype for t in relevant_types) or water == "" or wtype == "":
-    #                 return True
-    #         return False
-    #     water_names_gdf = water_bodies_gdf[water_bodies_gdf["tags"].apply(has_valid_water_name)]
-    #     for _, row in water_names_gdf.iterrows():
-    #         label_point = row.geometry.centroid
-    #         if (west <= label_point.x <= east) and (south <= label_point.y <= north):
-    #             name = row["tags"]["name"].replace("/", "\n")
-    #             name = "\n".join(re.split(r"\s+", name.strip())) if len(re.split(r"\s+", name.strip())) == 2 else name
-    #             ax.text(label_point.x, label_point.y, name,
-    #                     fontsize=waterBodiesFontSize,
-    #                     fontfamily='serif',
-    #                     style='italic',
-    #                     color=(0, 0.3, 0.6),
-    #                     alpha=0.7,
-    #                     ha='center',
-    #                     va='center',
-    #                     rasterized = True,
-    #                     zorder=4)
+            cum_dist = 0.0
+            for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
+                cum_dist += seg_len
+                if cum_dist >= max_distance_km:
+                    if cum_dist <= max_distance_km * 1.5: # avoid plotting markers between abruptly stopped contours
+                        x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
+
+                        # Calculate slope angle
+                        angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+                        if angle > 90:
+                            angle -= 180
+                        elif angle < -90:
+                            angle += 180
+
+                        ax.text(x_mid, y_mid, f"{level:.0f}",
+                                fontsize=contoursFontSize,
+                                color='0.55', alpha=0.5,
+                                ha='center', va='center',
+                                rotation=angle, rotation_mode='anchor',
+                                zorder=1, rasterized=True)
+                    cum_dist = 0.0
+    print("Finished labeling contours.")
+
+    print("Plotting structures...")
+    if structures_gdf is not None and not structures_gdf.empty:
+        structures_gdf.plot(ax=ax, edgecolor='0.4', facecolor='0.6', alpha=0.5, linewidth=0.05)
+        ax.collections[-1].set_rasterized(True)
+
+    print("Plotting water bodies...")
+    if water_bodies_gdf is not None and not water_bodies_gdf.empty:
+        water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96), edgecolor=(0.42, 0.7, 0.84), linewidth=0.1, zorder=3)
+        ax.collections[-1].set_rasterized(True)
+        def has_valid_water_name(tags):
+            if not isinstance(tags, dict):
+                return False
+            name = tags.get("name")
+            if not name:
+                return False
+            natural = tags.get("natural", "").lower()
+            water = tags.get("water", "").lower()
+            wtype = tags.get("type", "").lower()
+            # Check for relevant water bodies:
+            relevant_types = ["lake", "reservoir", "artificial", "glacial", "pond", "reservoir", "sea", "ocean"]
+            if natural == "water":
+                # Accept if water or type tag matches relevant keywords
+                if any(t in water for t in relevant_types) or any(
+                        t in wtype for t in relevant_types) or water == "" or wtype == "":
+                    return True
+            return False
+        water_names_gdf = water_bodies_gdf[water_bodies_gdf["tags"].apply(has_valid_water_name)]
+        for _, row in water_names_gdf.iterrows():
+            label_point = row.geometry.centroid
+            if (west <= label_point.x <= east) and (south <= label_point.y <= north):
+                name = row["tags"]["name"].replace("/", "\n")
+                name = "\n".join(re.split(r"\s+", name.strip())) if len(re.split(r"\s+", name.strip())) == 2 else name
+                ax.text(label_point.x, label_point.y, name,
+                        fontsize=waterBodiesFontSize,
+                        fontfamily='serif',
+                        style='italic',
+                        color=(0, 0.3, 0.6),
+                        alpha=0.7,
+                        ha='center',
+                        va='center',
+                        rasterized = True,
+                        zorder=4)
 
     print("Plotting rivers and their labels...")
     label_step_km = 1.5  # candidate labels every 500m
     max_distance_km = 1.5  # minimum distance between river labels
+    segment_length_km = 0.5  # 500 meters for label rotation calculation
 
     if rivers_gdf is not None and not rivers_gdf.empty:
         rivers_only = rivers_gdf[rivers_gdf["waterway"].isin(["river", "stream"])]
@@ -622,6 +622,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                 name, geom = row.get("name"), row.geometry
                 if not name or geom.is_empty:
                     continue
+                words = re.split(r"[ -]", name)
+                name = "\n".join(" ".join(words[i:i + 2]) for i in range(0, len(words), 2))
 
                 lines = [
                     geom] if geom.geom_type == 'LineString' else geom.geoms if geom.geom_type == 'MultiLineString' else []
@@ -636,18 +638,22 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         cumlen_km.append(cumlen_km[-1] + haversine_distance(y1, x1, y2, x2))
                     cumlen_km = np.array(cumlen_km)
 
-                    window = 5  # smoothing for angle
+                    # window = 5  # smoothing for angle
                     pos = 0.0
                     while pos <= cumlen_km[-1]:
                         idx = np.searchsorted(cumlen_km, pos)
                         idx = min(idx, len(coords) - 1)
                         x, y = coords[idx]
 
-                        # compute angle for label rotation
-                        start_idx = max(idx - window, 0)
-                        end_idx = min(idx + window, len(coords) - 1)
+                        # Determine start and end indices for rotation using a ~100m segment
+                        start_cum = max(cumlen_km[idx] - segment_length_km / 2, 0)
+                        end_cum = min(cumlen_km[idx] + segment_length_km / 2, cumlen_km[-1])
+                        start_idx = np.searchsorted(cumlen_km, start_cum)
+                        end_idx = np.searchsorted(cumlen_km, end_cum)
+
                         p1 = coords[start_idx]
                         p2 = coords[end_idx]
+
                         angle = math.degrees(math.atan2(p2[1] - p1[1], p2[0] - p1[0]))
                         if angle < -90:
                             angle += 180
@@ -908,8 +914,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 
 def main():
-    rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
-    # rasterPath = r"./2025-08-14_12-52-02/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz"  # NMK hires
+    # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
+    rasterPath = r"./2025-08-14_12-52-02/heightmap_z13_lon_20.3907_23.1151_lat_40.7806_42.4558_reslon_0.000172_reslat_0.000128.npz"  # NMK hires
 
     print("Starting map generation process...")
 
@@ -940,9 +946,9 @@ def main():
     airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
-    scale, dpi = 4, int(300) # 4, 800
+    scale, dpi = 4, int(800) # 4, 800
     # We have to use a scaling trick in order to render small fonts (less than 1pt)
-    exagerateTerrain = False
+    exagerateTerrain = True
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north,
                                     east, dpi=dpi, scale=scale, resolution=resolution, exagerateTerrain=exagerateTerrain)
 
