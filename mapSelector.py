@@ -11,6 +11,8 @@ import geodatasets
 from matplotlib.patches import Rectangle
 from tkinter import ttk
 from tkinter import messagebox
+import threading
+import pyperclip
 
 def ask_sure(numtiles: int, tile_size: int) -> bool:
     result = messagebox.askyesno("Are you sure?", "Request to download %d tiles of size %dx%dpx? \n Total size: %.1fMB." % (numtiles, tile_size, tile_size, 0.25*numtiles))
@@ -50,7 +52,7 @@ def fetch_tile(x_idx, y_idx, x, y, zoom, tile_size, base_url, max_retries=10):
     tqdm.write(f"Failed to fetch tile {x},{y} after {max_retries} attempts.")
     return None
 
-def fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir="heightmap_data", max_workers=10):
+def fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir="heightmap_data", max_workers=10, parent=None):
     os.makedirs(output_dir, exist_ok=True)
 
     tile_x_nw, tile_y_nw = latlon_to_tile(north, west, zoom)
@@ -66,84 +68,204 @@ def fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir="h
     tile_size = 256
     num_cols = max_tile_x - min_tile_x + 1
     num_rows = max_tile_y - min_tile_y + 1
+    num_tiles = num_rows * num_cols
 
-    if ask_sure(num_rows*num_cols, tile_size):
+    if not ask_sure(num_tiles, tile_size):
+        return
 
-        elevation_data_array = np.zeros((num_rows * tile_size, num_cols * tile_size), dtype=np.float32)
-        base_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
+    # --- Progress window (lives on the Tk main thread) ---
+    progress_win = tk.Toplevel(parent)
+    progress_win.title("Downloading Tiles")
+    progress_win.resizable(False, False)
 
-        # Prepare all tile download tasks
-        tasks = []
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for xi, x_tile in enumerate(range(min_tile_x, max_tile_x + 1)):
-                for yi, y_tile in enumerate(range(min_tile_y, max_tile_y + 1)):
-                    tasks.append(executor.submit(fetch_tile, xi, yi, x_tile, y_tile, zoom, tile_size, base_url, max_retries=10))
+    status_var = tk.StringVar(value=f"Downloading {num_tiles} tiles…")
+    tk.Label(progress_win, textvariable=status_var).pack(padx=16, pady=(16, 8))
 
-            for future in tqdm(as_completed(tasks), total=len(tasks), desc="Downloading & Processing Tiles"):
-                result = future.result()
-                if result is not None:
-                    xi, yi, elevation = result
-                    elevation_data_array[yi * tile_size:(yi + 1) * tile_size,
-                                         xi * tile_size:(xi + 1) * tile_size] = elevation
+    progress_var = tk.IntVar(value=0)
+    progress = ttk.Progressbar(progress_win, maximum=num_tiles, length=320, variable=progress_var, mode="determinate")
+    progress.pack(padx=16, pady=(0, 16))
 
-        if np.all(elevation_data_array == 0) and (num_cols * num_rows > 0):
-            print("Warning: No elevation data was successfully processed.")
-            return
+    progress_win.update_idletasks()
+    if parent is not None:
+        # center over parent
+        pw = progress_win.winfo_width()
+        ph = progress_win.winfo_height()
+        px = parent.winfo_rootx() + (parent.winfo_width() // 2) - (pw // 2)
+        py = parent.winfo_rooty() + (parent.winfo_height() // 2) - (ph // 2)
+    else:
+        # center on screen
+        sw = progress_win.winfo_screenwidth()
+        sh = progress_win.winfo_screenheight()
+        pw = progress_win.winfo_width()
+        ph = progress_win.winfo_height()
+        px = (sw // 2) - (pw // 2)
+        py = (sh // 2) - (ph // 2)
 
-        # Calculate bounds and resolution (pixel-centered)
-        top_left_lat, top_left_lon = tile_to_latlon(min_tile_x, min_tile_y, zoom)
-        bottom_right_lat, bottom_right_lon = tile_to_latlon(max_tile_x + 1, max_tile_y + 1, zoom)
+    progress_win.geometry(f"+{px}+{py}")
 
-        res_lon = (bottom_right_lon - top_left_lon) / (num_cols * tile_size)
-        res_lat = (top_left_lat - bottom_right_lat) / (num_rows * tile_size)
+    # Keep the window on top of the parent, but not permanently
+    if parent is not None:
+        progress_win.transient(parent)
 
-        # Shift to pixel center
-        top_left_lat -= (res_lat / 2)
-        top_left_lon += (res_lon / 2)
-        bottom_right_lat += (res_lat / 2)
-        bottom_right_lon -= (res_lon / 2)
+    def worker():
+        try:
+            elevation_data_array = np.zeros((num_rows * tile_size, num_cols * tile_size), dtype=np.float32)
+            base_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
 
-        filename_base = os.path.join(output_dir,
-            f"heightmap_z{zoom}_lon_{top_left_lon:.4f}_{bottom_right_lon:.4f}_lat_{bottom_right_lat:.4f}_{top_left_lat:.4f}_reslon_{abs(res_lon):.6f}_reslat_{abs(res_lat):.6f}")
+            tasks = []
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for xi, x_tile in enumerate(range(min_tile_x, max_tile_x + 1)):
+                    for yi, y_tile in enumerate(range(min_tile_y, max_tile_y + 1)):
+                        tasks.append(executor.submit(
+                            fetch_tile, xi, yi, x_tile, y_tile, zoom, tile_size, base_url, max_retries=10
+                        ))
 
-        # Save NPZ
-        npz_path = f"{filename_base}.npz"
-        np.savez(npz_path,
-                 elevations=elevation_data_array,
-                 north=top_left_lat,
-                 south=bottom_right_lat,
-                 west=top_left_lon,
-                 east=bottom_right_lon,
-                 resolution_lon_deg=res_lon,
-                 resolution_lat_deg=res_lat)
-        print(f"Raw elevation data saved: {npz_path}")
+                completed = 0
+                for future in as_completed(tasks):
+                    result = future.result()
+                    completed += 1
+                    # update progress in UI thread
+                    if parent is not None:
+                        parent.after(0, progress_var.set, completed)
 
-        # Save JPEG (north-up)
-        elev_for_jpg = elevation_data_array  # no flip, as you said it's already correct
-        min_val, max_val = elev_for_jpg.min(), elev_for_jpg.max()
-        scaled_jpg = ((elev_for_jpg - min_val) / (max_val - min_val) * 255).astype(np.uint8) if max_val > min_val else np.zeros_like(elev_for_jpg, dtype=np.uint8)
-        jpg_path = f"{filename_base}.jpg"
-        Image.fromarray(scaled_jpg).save(jpg_path, quality=95)
-        print(f"Visual JPEG saved: {jpg_path}")
+                    if result is not None:
+                        xi, yi, elevation = result
+                        elevation_data_array[yi * tile_size:(yi + 1) * tile_size,
+                                             xi * tile_size:(xi + 1) * tile_size] = elevation
 
-        # Stats
-        print("\n--- Elevation Data Stats ---")
-        print(f"Min Elevation: {np.min(elevation_data_array):.2f}m")
-        print(f"Max Elevation: {np.max(elevation_data_array):.2f}m")
-        print(f"Mean Elevation: {np.mean(elevation_data_array):.2f}m")
-        print(f"Resolution (Lon): {abs(res_lon):.6f}°/px")
-        print(f"Resolution (Lat): {abs(res_lat):.6f}°/px")
+            # If nothing downloaded, bail out
+            if np.all(elevation_data_array == 0) and num_tiles > 0:
+                print("Warning: No elevation data was successfully processed.")
+                if parent is not None:
+                    parent.after(0, progress_win.destroy)
+                return
+
+            # Switch to a small spinner while we mosaic & save
+            def start_spin():
+                status_var.set("Mosaicking & saving…")
+                progress.config(mode="indeterminate", maximum=100)
+                progress.start(10)
+            if parent is not None:
+                parent.after(0, start_spin)
+
+            # Calculate bounds & resolution (pixel-centered), then save (same as your code)
+            top_left_lat, top_left_lon = tile_to_latlon(min_tile_x, min_tile_y, zoom)
+            bottom_right_lat, bottom_right_lon = tile_to_latlon(max_tile_x + 1, max_tile_y + 1, zoom)
+
+            res_lon = (bottom_right_lon - top_left_lon) / (num_cols * tile_size)
+            res_lat = (top_left_lat - bottom_right_lat) / (num_rows * tile_size)
+
+            top_left_lat -= (res_lat / 2)
+            top_left_lon += (res_lon / 2)
+            bottom_right_lat += (res_lat / 2)
+            bottom_right_lon -= (res_lon / 2)
+
+            filename_base = os.path.join(
+                output_dir,
+                f"heightmap_z{zoom}_lon_{top_left_lon:.1f}_{bottom_right_lon:.1f}_lat_{bottom_right_lat:.1f}_{top_left_lat:.1f}"
+            )
+
+            npz_path = f"{filename_base}.npz"
+            np.savez(
+                npz_path,
+                elevations=elevation_data_array,
+                north=top_left_lat,
+                south=bottom_right_lat,
+                west=top_left_lon,
+                east=bottom_right_lon,
+                resolution_lon_deg=res_lon,
+                resolution_lat_deg=res_lat,
+            )
+            print(f"Raw elevation data saved: {npz_path}")
+
+            # --- Popup to copy filename ---
+            def show_copy_popup():
+                popup = tk.Toplevel(parent)
+                popup.title("File Saved")
+                popup.resizable(False, False)
+
+                tk.Label(popup, text="Heightmap saved as:", font=("Arial", 14)).pack(padx=16, pady=(16, 8))
+
+                # Use an Entry for selectable text
+                entry_var = tk.StringVar(value=f".\{filename_base}.npz")
+                entry = tk.Entry(popup, textvariable=entry_var, font=("Arial", 14), width=60)
+                entry.pack(padx=16, pady=(0, 8))
+                entry.configure(state='readonly')  # prevent editing, but still selectable
+
+                def copy_to_clipboard():
+                    popup.clipboard_clear()
+                    popup.clipboard_append(f".\{filename_base}.npz")
+                    popup.update()  # keep it on clipboard
+                    tk.messagebox.showinfo("Copied", "Filename copied to clipboard!")
+
+                copy_btn = tk.Button(popup, text="Copy to clipboard", command=copy_to_clipboard)
+                copy_btn.pack(pady=(0, 16))
+
+                # center popup
+                pw, ph = 800, 200
+                if parent:
+                    px = parent.winfo_rootx() + (parent.winfo_width() // 2) - (pw // 2)
+                    py = parent.winfo_rooty() + (parent.winfo_height() // 2) - (ph // 2)
+                else:
+                    sw, sh = popup.winfo_screenwidth(), popup.winfo_screenheight()
+                    px = (sw // 2) - (pw // 2)
+                    py = (sh // 2) - (ph // 2)
+                popup.geometry(f"{pw}x{ph}+{px}+{py}")
+
+            if parent is not None:
+                parent.after(0, show_copy_popup)
+
+            elev_for_jpg = elevation_data_array
+            min_val, max_val = elev_for_jpg.min(), elev_for_jpg.max()
+            scaled_jpg = (
+                ((elev_for_jpg - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+                if max_val > min_val else np.zeros_like(elev_for_jpg, dtype=np.uint8)
+            )
+            jpg_path = f"{filename_base}.jpg"
+            Image.fromarray(scaled_jpg).save(jpg_path, quality=95)
+            print(f"Visual JPEG saved: {jpg_path}")
+
+            print("\n--- Elevation Data Stats ---")
+            print(f"Min Elevation: {np.min(elevation_data_array):.2f}m")
+            print(f"Max Elevation: {np.max(elevation_data_array):.2f}m")
+            print(f"Mean Elevation: {np.mean(elevation_data_array):.2f}m")
+            print(f"Resolution (Lon): {abs(res_lon):.6f}°/px")
+            print(f"Resolution (Lat): {abs(res_lat):.6f}°/px")
+
+        except Exception as e:
+            # Ensure errors are visible
+            print(f"Error in fetch_and_process_heightmap worker: {e}")
+            try:
+                if parent is not None:
+                    parent.after(0, messagebox.showerror, "Error", str(e))
+            except Exception:
+                pass
+        finally:
+            if parent is not None:
+                parent.after(0, lambda: (progress.stop(), progress_win.destroy()))
+
+    # run the worker in a background thread so the GUI stays responsive
+    threading.Thread(target=worker, daemon=True).start()
+
 
 class MapSelectorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("World Map Rectangle Selector (Geopandas)")
+        self.root.title("Height map downloader")
         self.root.state('zoomed')
 
         self.world_gdf = None
         self.rect_patch = None
         self.start_lon_lat = None
         self.end_lon_lat = None
+
+        # --- Title above map ---
+        title_label = tk.Label(
+            root,
+            text="Height map downloader",
+            font=("Arial", 20, "bold")
+        )
+        title_label.pack(pady=8)
 
         self.fig, self.ax = plt.subplots(figsize=(8, 6), layout='constrained')
         self.ax.set_aspect('equal')
@@ -160,6 +282,16 @@ class MapSelectorApp:
         self.toolbar.update()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
+        # --- Controls info label (bottom-right) ---
+        controls_label = tk.Label(
+            root,
+            text="ℹ Left click: select rectangle | Scroll: zoom | Right click: pan",
+            font=("Arial", 10),
+            anchor="center",
+            justify="center"
+        )
+        controls_label.pack(side=tk.BOTTOM, anchor="center", padx=10, pady=5)
+
         self.coords_label = tk.Label(root, text="Selected Area: (N/A)", font=("Arial", 12))
         self.coords_label.pack(pady=10)
 
@@ -169,7 +301,7 @@ class MapSelectorApp:
         self.zoom_level = tk.IntVar(value=9)
 
         # Dropdown menu for zoom levels
-        zoom_label = tk.Label(root, text="Zoom Level:", font=("Arial", 12))
+        zoom_label = tk.Label(root, text="Level of detail:", font=("Arial", 12))
         zoom_label.pack(pady=5)
 
         self.zoom_dropdown = ttk.Combobox(root, textvariable=self.zoom_level, values=list(range(8, 15)), width=5,
@@ -195,8 +327,8 @@ class MapSelectorApp:
 
     def fetchHeight(self, east, west, north, south, zoom):
         print(f"Fetching: East={east}, West={west}, North={north}, South={south}, Zoom={zoom}")
-        output_dir = f"{east:.1f}-{west:.1f}-{north:.1f}-{south:.1f}-{zoom}"
-        fetch_and_process_heightmap(west, south, east, north, zoom=zoom, output_dir=output_dir, max_workers=32)
+        output_dir = f"{zoom}_{east:.1f}_{west:.1f}_{north:.1f}_{south:.1f}"
+        fetch_and_process_heightmap(west, south, east, north, zoom=zoom, output_dir=output_dir, max_workers=32, parent=self.root)
 
     def on_get_height(self):
         if self.rect_patch:
@@ -393,6 +525,12 @@ class MapSelectorApp:
     def on_window_resize(self, event):
         self.fig.tight_layout()
         self.canvas_widget.draw_idle()
+
+    def on_close(self):
+        """Ensure app terminates cleanly when window is closed."""
+        self.root.quit()
+        self.root.destroy()
+        os._exit(0)  # hard exit to kill any threads (like ThreadPoolExecutor)
 
 if __name__ == "__main__":
     root = tk.Tk()

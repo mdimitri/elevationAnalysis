@@ -906,6 +906,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 def main():
     # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
     # rasterPath = r"./2025-08-14_16-17-43/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
+    rasterPath = r".\10_34.6_32.3_35.7_34.5\heightmap_z10_lon_32.0_34.8_lat_34.3_35.7.npz"
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
