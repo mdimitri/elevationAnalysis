@@ -79,8 +79,8 @@ def reproject_npz_to_epsg4326(npz_path):
     }
 
 def _fetch_data_from_osm(query, bounds, geometry_handler, desc):
-    # overpass_url = "https://overpass-api.de/api/interpreter"
-    overpass_url = "https://lz4.overpass-api.de/api/interpreter"
+    overpass_url = "https://overpass-api.de/api/interpreter"
+    # overpass_url = "https://lz4.overpass-api.de/api/interpreter"
     query = query.format(lat1=bounds[0], lon1=bounds[2], lat2=bounds[1], lon2=bounds[3])
     with tqdm(total=100, desc=f"Fetching {desc}",
               bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]", dynamic_ncols=True,
@@ -878,7 +878,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             linewidth=1,
             alpha=.5,
             linestyle='-',
-            zorder=10
+            zorder=4
         )
         ax.collections[-1].set_rasterized(True)
         country_boundaries_gdf.plot( # black dashed thin line
@@ -888,7 +888,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             linewidth=.25,
             alpha=.9,
             linestyle=(0, (3,5,1,5)), # dashdotted
-            zorder=11
+            joinstyle='round',
+            zorder=5
         )
         ax.collections[-1].set_rasterized(True)
 
@@ -914,10 +915,14 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
     # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
-    rasterPath = r"./2025-08-14_14-45-40/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
+    rasterPath = r"./2025-08-14_16-17-43/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
+    # rasterPath = r"./2025-08-14_20-16-41/heightmap_z10_lon_-24.6087_-13.3601_lat_63.2339_66.6527_reslon_0.001373_reslat_0.000581.npz" # Iceland
+    # rasterPath = r"./2025-08-14_20-26-16/heightmap_z11_lon_13.0082_23.3786_lat_40.5808_47.1596_reslon_0.000687_reslat_0.000494.npz"  # YU
+    # rasterPath = r"./2025-08-14_20-47-35\heightmap_z10_lon_69.2585_74.5306_lat_39.6401_42.0325_reslon_0.001373_reslat_0.001039.npz"  # Fergana valley
 
     print("Starting map generation process...")
 
+    #mapzen tiles usually come in as Web Mercator, projcet to lat-lon rectangular projection
     elev_4326, meta_4326 = reproject_npz_to_epsg4326(rasterPath)
 
     map_data = elev_4326
@@ -931,7 +936,7 @@ def main():
     subsample = 1
     map_s = map_data[::subsample, ::subsample]
 
-    map_s[map_s == 0] = -100
+    # map_s[map_s < 0] = -100
 
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
 
@@ -945,8 +950,18 @@ def main():
     airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
-    scale, dpi = 4, int(800) # 4, 800
+    # hires settings
     # We have to use a scaling trick in order to render small fonts (less than 1pt)
+    # scale, dpi = 5, int(640)
+    # scale, dpi = 4, int(800)
+    # scale, dpi = 3, int(1066)
+    # scale, dpi = 2, int(1600)
+    scale, dpi = 1.4, int(1500) # good middle ground
+
+    # lowres settings
+    # scale, dpi = 2, int(640)
+
+    # Apply color exaggeration
     exagerateTerrain = True
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north,
                                     east, dpi=dpi, scale=scale, resolution=resolution, exagerateTerrain=exagerateTerrain)

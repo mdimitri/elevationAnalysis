@@ -127,48 +127,12 @@ def fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir="h
     print(f"Resolution (Lat): {abs(res_lat):.6f}°/px")
 
 
-# Example run
+
 ## north macedonia
 west = 20.4529023 - 0.05
 south = 40.852478 - 0.05
 east = 23.034051 + 0.05
 north = 42.3739044 + 0.05
-
-# ## macedonia
-# west = 20.4 - 0.05     # 20.35°E
-# south = 39.7 - 0.05    # 38.95°N
-# east = 24.8 + 0.05     # 24.55°E
-# north = 42.5 + 0.05    # 42.55°N
-
-# ## belgium
-# west = 2.54 - 0.05
-# south = 49.50 - 0.05
-# east = 6.40 + 0.05
-# north = 51.51 + 0.05
-
-# ## hawaii
-# west = -160.25 - 0.05
-# south = 18.85 - 0.05
-# east = -154.75 + 0.05
-# north = 22.25 + 0.05
-
-# ## CH
-# west = 5.95 - 0.05
-# south = 45.82 - 0.05
-# east = 10.50 + 0.05
-# north = 47.85 + 0.05
-
-# ## Italy
-# west = 6.62 - 0.05
-# south = 36.62 - 0.05
-# east = 18.52 + 0.05
-# north = 47.10 + 0.05
-
-# # Khumbu Valley approximate extents
-# west = 86.3 - 0.05
-# south = 27.50 - 0.05
-# east = 87.2 + 0.05
-# north = 28.10 + 0.05
 
 output_dir = __import__("datetime").datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 fetch_and_process_heightmap(west, south, east, north, zoom=12, output_dir=output_dir, max_workers=32)
