@@ -469,9 +469,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
     settlementsFontSize   = 1 * resolutionFactor# master for the largest font, labels of smaller settlements take a fraction of this size
     airportsFontSize      = 0.5 * resolutionFactor
-    contoursFontSize      = 0.25 * resolutionFactor
-    mountainPeaksFontSize = 0.4 * resolutionFactor
-    riverLabelFontSize    = 0.4 * resolutionFactor
+    contoursFontSize      = 0.2 * resolutionFactor
+    mountainPeaksFontSize = 0.3 * resolutionFactor
+    riverLabelFontSize    = 0.3 * resolutionFactor
     waterBodiesFontSize   = 0.4 * resolutionFactor
 
     airportMarkerSize       = 1 * resolutionFactor
@@ -512,41 +512,47 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     print("Drawing thin contours with thin lines...");
     contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.55', alpha=0.4, linewidths=0.05)
     print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
-    max_distance_km = 2.0  # 2 km spacing
+
+    max_distance_km = 2.0  # spacing between labels
+
     for level, collection in tqdm(zip(contours_thin.levels, contours_thin.collections),
                                   total=len(contours_thin.levels),
                                   desc="Drawing contour labels", dynamic_ncols=True, leave=False):
         collection.set_rasterized(True)
+        # Keep track of label positions per contour level
+        placed_labels = []
         for path in collection.get_paths():
             vertices = path.vertices
             if len(vertices) < 2:
                 continue
-
             deltas = [
                 haversine_distance(lat1, lon1, lat2, lon2)
                 for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
             ]
-
             cum_dist = 0.0
             for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
                 cum_dist += seg_len
                 if cum_dist >= max_distance_km:
-                    if cum_dist <= max_distance_km * 1.5: # avoid plotting markers between abruptly stopped contours
+                    if cum_dist <= max_distance_km * 1.5:  # avoid labeling at broken contours
                         x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
-
-                        # Calculate slope angle
-                        angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                        if angle > 90:
-                            angle -= 180
-                        elif angle < -90:
-                            angle += 180
-
-                        ax.text(x_mid, y_mid, f"{level:.0f}",
+                        # Check distance to all previously placed labels of this level
+                        if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
+                               for py, px in placed_labels):
+                            # Calculate slope angle
+                            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+                            if angle > 90:
+                                angle -= 180
+                            elif angle < -90:
+                                angle += 180
+                            ax.text(
+                                x_mid, y_mid, f"{level:.0f}",
                                 fontsize=contoursFontSize,
-                                color='0.55', alpha=0.5,
-                                ha='center', va='center',
-                                rotation=angle, rotation_mode='anchor',
-                                zorder=1, rasterized=True)
+                                color="0.55", alpha=0.5,
+                                ha="center", va="center",
+                                rotation=angle, rotation_mode="anchor",
+                                zorder=1, rasterized=True,
+                            )
+                            placed_labels.append((y_mid, x_mid))  # store as (lat, lon)
                     cum_dist = 0.0
     print("Finished labeling contours.")
 
@@ -594,8 +600,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         zorder=4)
 
     print("Plotting rivers and their labels...")
-    label_step_km = 1.5  # candidate labels every 500m
-    max_distance_km = 1.5  # minimum distance between river labels
+    label_step_km = 2.5  # candidate labels every 500m
+    max_distance_km = 2.5  # minimum distance between river labels
     segment_length_km = 0.5  # 500 meters for label rotation calculation
 
     if rivers_gdf is not None and not rivers_gdf.empty:
@@ -915,12 +921,18 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 def main():
     # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
     rasterPath = r"./2025-08-14_16-17-43/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
-    # rasterPath = r"./2025-08-14_20-16-41/heightmap_z10_lon_-24.6087_-13.3601_lat_63.2339_66.6527_reslon_0.001373_reslat_0.000581.npz" # Iceland
-    # rasterPath = r"./2025-08-14_20-26-16/heightmap_z11_lon_13.0082_23.3786_lat_40.5808_47.1596_reslon_0.000687_reslat_0.000494.npz"  # YU
-    # rasterPath = r"./2025-08-14_20-47-35\heightmap_z10_lon_69.2585_74.5306_lat_39.6401_42.0325_reslon_0.001373_reslat_0.001039.npz"  # Fergana valley
+    ### hires settings
+    ### We have to use a scaling trick in order to render small fonts (less than 1pt)
+    # resolutionFactor, dpi = 5, int(640)
+    # resolutionFactor, dpi = 4, int(800)
+    # resolutionFactor, dpi = 3, int(1066)
+    # resolutionFactor, dpi = 2, int(1600)
+    resolutionFactor, dpi = 1.4, int(1500) # good middle ground
+    ### lowres settings
+    # resolutionFactor, dpi = 2, int(640)
+
 
     print("Starting map generation process...")
-
     #mapzen tiles usually come in as Web Mercator, projcet to lat-lon rectangular projection
     elev_4326, meta_4326 = reproject_npz_to_epsg4326(rasterPath)
 
@@ -935,8 +947,6 @@ def main():
     subsample = 1
     map_s = map_data[::subsample, ::subsample]
 
-    # map_s[map_s < 0] = -100
-
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
 
     places_gdf             = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
@@ -948,17 +958,6 @@ def main():
     railroads_gdf          = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
     airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
-
-    # hires settings
-    # We have to use a scaling trick in order to render small fonts (less than 1pt)
-    # resolutionFactor, dpi = 5, int(640)
-    # resolutionFactor, dpi = 4, int(800)
-    # resolutionFactor, dpi = 3, int(1066)
-    # resolutionFactor, dpi = 2, int(1600)
-    resolutionFactor, dpi = 1.4, int(1500) # good middle ground
-
-    # lowres settings
-    # resolutionFactor, dpi = 2, int(640)
 
     # Apply color exaggeration
     exagerateTerrain = True
