@@ -16,8 +16,8 @@ Make sure you have Python 3.8 or newer installed. You can download it from [pyth
 
 1.  **Clone the repository** (if it's in a Git repository):
     ```bash
-    git clone [your-repository-url]
-    cd [your-repository-name]
+    git clone https://github.com/mdimitri/elevationAnalysis.git
+    cd elevationAnalysis
     ```
     If not, just make sure both `getElevationRaster_mapzenWebMercator.py` and `makeMap_epsg4326.py` are in the same directory.
 
