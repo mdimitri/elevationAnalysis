@@ -463,11 +463,10 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
 
 
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
-                              scale, resolution, exagerateTerrain):
-    fig_width, fig_height = scale * 10, scale * 10
+                              resolutionFactor, resolution, exagerateTerrain):
+    fig_width, fig_height = resolutionFactor * 10, resolutionFactor * 10
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
 
-    resolutionFactor = scale # * 1000 / dpi
     settlementsFontSize   = 1 * resolutionFactor# master for the largest font, labels of smaller settlements take a fraction of this size
     airportsFontSize      = 0.5 * resolutionFactor
     contoursFontSize      = 0.25 * resolutionFactor
@@ -952,22 +951,22 @@ def main():
 
     # hires settings
     # We have to use a scaling trick in order to render small fonts (less than 1pt)
-    # scale, dpi = 5, int(640)
-    # scale, dpi = 4, int(800)
-    # scale, dpi = 3, int(1066)
-    # scale, dpi = 2, int(1600)
-    scale, dpi = 1.4, int(1500) # good middle ground
+    # resolutionFactor, dpi = 5, int(640)
+    # resolutionFactor, dpi = 4, int(800)
+    # resolutionFactor, dpi = 3, int(1066)
+    # resolutionFactor, dpi = 2, int(1600)
+    resolutionFactor, dpi = 1.4, int(1500) # good middle ground
 
     # lowres settings
-    # scale, dpi = 2, int(640)
+    # resolutionFactor, dpi = 2, int(640)
 
     # Apply color exaggeration
     exagerateTerrain = True
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north,
-                                    east, dpi=dpi, scale=scale, resolution=resolution, exagerateTerrain=exagerateTerrain)
+                                    east, dpi=dpi, resolutionFactor=resolutionFactor, resolution=resolution, exagerateTerrain=exagerateTerrain)
 
     output_filename = (
-        f'baseMap_{subsample}_{scale}_{dpi}dpi_{resolution}_ex={exagerateTerrain}'
+        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution}_ex={exagerateTerrain}'
         f'_E={format(east, ".3f").replace(".", ",")}'
         f'_W={format(west, ".3f").replace(".", ",")}'
         f'_N={format(north, ".3f").replace(".", ",")}'
