@@ -45,8 +45,8 @@ class MapSelectorApp:
     def load_and_plot_map(self):
         try:
             print("Attempting to load 'naturalearth.countries.50m'...")
-            self.world_gdf = gpd.read_file(geodatasets.get_path('naturalearth.countries.50m'))
-            print("Successfully loaded 'naturalearth.countries.50m'.")
+            self.world_gdf = gpd.read_file(r".\worldMap\ne_50m_admin_0_countries.zip")
+            print("Successfully loaded local world map. (downloaded from: https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/50m/cultural/ne_50m_admin_0_countries.zip")
         except ValueError:
             print("'naturalearth.countries.50m' not found. Falling back to 'naturalearth.land'.")
             self.world_gdf = gpd.read_file(geodatasets.get_path('naturalearth.land'))
