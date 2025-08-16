@@ -927,7 +927,7 @@ def main():
     # resolutionFactor, dpi = 4, int(800)
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
-    resolutionFactor, dpi = 1.4, int(1500) # good middle ground
+    resolutionFactor, dpi = 1.5, int(1500) # good middle ground
     ### lowres settings
     # resolutionFactor, dpi = 2, int(640)
 
