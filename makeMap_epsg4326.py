@@ -19,21 +19,6 @@ from skimage import exposure
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.spatial import cKDTree
 
-# colors = [
-#     '#2f4f4f',  # dark slate gray (deep water)
-#     '#4f6d7a',  # muted steel blue (shallow water)
-#     '#7b9e87',  # soft muted green (low land)
-#     '#a3b18a',  # olive green (plains)
-#     '#c9d6aa',  # pale moss green (foothills)
-#     '#ddd6a4',  # muted beige/yellow (low mountains)
-#     '#cfc3a6',  # soft brown/gray (mid mountains)
-#     '#bfb8a5',  # muted taupe (higher mountains)
-#     '#d9d8d7',  # light gray (sub peaks)
-#     '#ececec',  # very light gray (high peaks)
-#     '#ffffff',  # white (highest peaks)
-# ]
-# cmap = LinearSegmentedColormap.from_list('contrasty_terrain', colors, N=1024)
-
 gamma = 0.5
 cmap = plt.get_cmap('terrain')
 x = np.linspace(0.0, 1, 5000)
