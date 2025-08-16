@@ -127,14 +127,24 @@ def fetch_and_process_heightmap(west, south, east, north, zoom=13, output_dir="h
     print(f"Resolution (Lat): {abs(res_lat):.6f}°/px")
 
 def main():
-    ## north macedonia
-    west = 20.4529023 - 0.05
-    south = 40.852478 - 0.05
-    east = 23.034051 + 0.05
-    north = 42.3739044 + 0.05
+    # ## north macedonia
+    # west = 20.4529023 - 0.05
+    # south = 40.852478 - 0.05
+    # east = 23.034051 + 0.05
+    # north = 42.3739044 + 0.05
+
+    ## us
+    # west = -128.0 - 0.05
+    # south = 50.0 - 0.05
+    # east = -59.0 + 0.05
+    # north = 23.0 + 0.05
+    west = -116.15 - 0.05
+    south = 36.9 - 0.05
+    east = -115.95 + 0.05
+    north = 37.2 + 0.05
 
     output_dir = __import__("datetime").datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    fetch_and_process_heightmap(west, south, east, north, zoom=12, output_dir=output_dir, max_workers=32)
+    fetch_and_process_heightmap(west, south, east, north, zoom=15, output_dir=output_dir, max_workers=32)
     return
 
 if __name__ == "__main__":

@@ -841,7 +841,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks...")
-    if not mountain_peaks_gdf.empty:
+    if mountain_peaks_gdf is not None and not mountain_peaks_gdf.empty:
         peaks_settings_map = {
             "mountain_peak": {"size_scale": 6.0, "text_scale_factor": 0.25},
         }
@@ -905,7 +905,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
     # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
-    rasterPath = r"./2025-08-14_16-17-43/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
+    # rasterPath = r"./2025-08-14_16-17-43/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
+
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
     # resolutionFactor, dpi = 5, int(640)
@@ -931,6 +932,7 @@ def main():
     print("Raster and metadata loaded!")
     subsample = 1
     map_s = map_data[::subsample, ::subsample]
+    map_s[map_s < 0] = -np.max(map_s) * 0.03 # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
 
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
 
