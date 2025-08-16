@@ -1,4 +1,4 @@
-# 🗺️ Terrain Map Generator
+# 🗺️ Geographical Map Generator
 
 This project allows you to generate detailed terrain maps with various geographical features like roads, rivers, buildings, and country boundaries. It fetches elevation data from Mapzen and geographical data from OpenStreetMap (OSM) to create visually rich maps. It generates a high-quality, print-ready file.
 
@@ -107,7 +107,7 @@ Feel free to fork this project, open issues, or submit pull requests with improv
 
 ### MIT License
 
-Copyright (c) [Year] [Your Name or Project Name]
+Copyright (c) [2025] [Geographical Map Generator]
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
