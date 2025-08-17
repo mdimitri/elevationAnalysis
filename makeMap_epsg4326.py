@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.spatial import cKDTree
 from shapely.ops import polygonize, unary_union  # Added for polygonize
 import colorsys
+import matplotlib.patheffects as patheffects
 
 ## origianl CM terrain
 # terrain_colors = [
@@ -983,6 +984,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     rasterized=True,
                     style=text_style,
                     color=color,
+                    path_effects=[patheffects.withStroke(linewidth=label_size*0.05, foreground=(0.9, 0.9, 0.9), capstyle="round")],
                     zorder=8
                 )
 
@@ -1154,7 +1156,7 @@ def main():
     places_gdf = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
     roads_gdf = load_or_fetch("roads", rasterPath, south, north, west, east, get_roads_from_osm)
     structures_gdf = None #load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
-    rivers_gdf = load_or_fetch("rivers", rasterPath, south, north, west, east, get_rivers_from_osm)
+    rivers_gdf =  load_or_fetch("rivers", rasterPath, south, north, west, east, get_rivers_from_osm)
     water_bodies_gdf = load_or_fetch("water_bodies", rasterPath, south, north, west, east, get_water_bodies_osm2geojson)
     mountain_peaks_gdf = None #load_or_fetch("mountain_peaks", rasterPath, south, north, west, east, get_mountain_peaks_osm2geojson)
     railroads_gdf = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
