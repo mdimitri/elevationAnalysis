@@ -18,12 +18,53 @@ from shapely.ops import transform as shapely_transform
 from skimage import exposure
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.spatial import cKDTree
+from shapely.ops import polygonize, unary_union  # Added for polygonize
+import colorsys
 
-gamma = 0.5
-cmap = plt.get_cmap('terrain')
+## origianl CM terrain
+# terrain_colors = [
+#     (0.00, (0.192,0.208,0.608)), # deep blue
+#     (0.152, (0.0, 0.604, 0.98)), # sea color
+#     (0.262, (0.047, 0.808, 0.408)), # green
+#     (0.42, (0.659, 0.929, 0.529)), # bright green
+#     (0.51, (0.973, 0.965, 0.584)), # yellow
+#     (0.75, (0.502, 0.361, 0.329)), # brown
+#     (1.00, (1.0, 1.0, 1.0)), # white
+# ]
+terrain_colors = [
+    (0.000, (0.192,0.208,0.608)), # deep blue
+    (0.050, (0.0, 0.604, 0.98)), # sea color
+    (0.300, (0.247, 0.608, 0.308)), # darker green
+    (0.400, (0.347, 0.708, 0.408)), # green
+    (0.500, (0.689, 0.829, 0.529)), # bright green
+    (0.550, (0.973, 0.935, 0.584)), # yellow
+    (0.750, (0.502, 0.361, 0.329)), # brown
+    (0.950, (0.9, 0.9, 1.0)), # white
+    (1.000, (1.0, 1.0, 1.0)), # white
+]
+f = 1.15  # value boost factor
+terrain_colors_boosted = [
+    (h, colorsys.hsv_to_rgb(*(*colorsys.rgb_to_hsv(*rgb)[:2], min(1.0, colorsys.rgb_to_hsv(*rgb)[2]*f))))
+    for h, rgb in terrain_colors
+]
+cmap = LinearSegmentedColormap.from_list("compressed_snow_terrain", terrain_colors_boosted)
+
+gamma = 0.45
+# cmap = plt.get_cmap('terrain')
 x = np.linspace(0.0, 1, 5000)
 colors = cmap(x ** gamma)
 gamma_cmap = LinearSegmentedColormap.from_list('gamma_terrain', colors, N=5000)
+
+
+def sanitize_filename(filename):
+    """
+    Removes invalid characters from a string to make it a valid filename.
+    """
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        filename = filename.replace(char, '')
+    return filename
+
 def haversine_distance(lat1, lon1, lat2, lon2, radius=6371.0):
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -31,6 +72,8 @@ def haversine_distance(lat1, lon1, lat2, lon2, radius=6371.0):
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return radius * c
+
+
 def reproject_npz_to_epsg4326(npz_path):
     data = np.load(npz_path)
     elev = data['elevations']
@@ -63,6 +106,7 @@ def reproject_npz_to_epsg4326(npz_path):
         'resolution_lat_deg': -dst_transform.e
     }
 
+
 def _fetch_data_from_osm(query, bounds, geometry_handler, desc):
     overpass_url = "https://overpass-api.de/api/interpreter"
     # overpass_url = "https://lz4.overpass-api.de/api/interpreter"
@@ -81,6 +125,9 @@ def _fetch_data_from_osm(query, bounds, geometry_handler, desc):
             # Ensure an empty GeoDataFrame still has the expected columns for 'places'
             if desc == "points of interest":
                 return gpd.GeoDataFrame(columns=['name', 'type', 'geometry'], crs="EPSG:4326")
+            # For water bodies, ensure 'tags' column is present even if empty
+            elif desc == "water bodies":
+                return gpd.GeoDataFrame(columns=['geometry', 'tags'], crs="EPSG:4326")
             else:
                 return gpd.GeoDataFrame()
 
@@ -123,11 +170,11 @@ def get_structures_from_osm(lat1, lat2, lon1, lon2):
 
     splits = 1
     # Prepare 8×8 tiling
-    lats = np.linspace(lat1, lat2, splits+1)
-    lons = np.linspace(lon1, lon2, splits+1)
+    lats = np.linspace(lat1, lat2, splits + 1)
+    lons = np.linspace(lon1, lon2, splits + 1)
 
     all_tiles = []
-    with tqdm(total=splits**2, desc="Fetching structures in tiles", dynamic_ncols=True) as pbar:
+    with tqdm(total=splits ** 2, desc="Fetching structures in tiles", dynamic_ncols=True) as pbar:
         for i in range(splits):
             for j in range(splits):
                 tile_south = lats[i]
@@ -301,6 +348,7 @@ def get_rivers_from_osm(lat1, lat2, lon1, lon2):
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "rivers")
 
 
+
 def get_water_bodies_osm2geojson(lat1, lat2, lon1, lon2):
     query = (
         f'[out:json][timeout:180];'
@@ -319,6 +367,7 @@ def get_water_bodies_osm2geojson(lat1, lat2, lon1, lon2):
         return gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
 
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "water bodies")
+
 
 def get_railroads_osm2geojson(lat1, lat2, lon1, lon2):
     query = (
@@ -361,6 +410,8 @@ def get_airports_osm2geojson(lat1, lat2, lon1, lon2):
         return gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
 
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "airports")
+
+
 def get_country_boundaries_from_osm(lat1, lat2, lon1, lon2):
     query = f"""
     [out:json];
@@ -408,6 +459,7 @@ def get_country_boundaries_from_osm(lat1, lat2, lon1, lon2):
 
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), boundaries_geometry_handler, "country boundaries")
 
+
 def get_mountain_peaks_osm2geojson(lat1, lat2, lon1, lon2):
     query = (
         f'[out:json][timeout:180];'
@@ -447,41 +499,43 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
         return data_gdf
 
 
-def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
+def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf,
+                              railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
                               resolutionFactor, resolution, exagerateTerrain):
     fig_width, fig_height = resolutionFactor * 10, resolutionFactor * 10
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
 
-    settlementsFontSize   = 1 * resolutionFactor# master for the largest font, labels of smaller settlements take a fraction of this size
-    airportsFontSize      = 0.5 * resolutionFactor
-    contoursFontSize      = 0.2 * resolutionFactor
+    settlementsFontSize = 1 * resolutionFactor  # master for the largest font, labels of smaller settlements take a fraction of this size
+    airportsFontSize = 0.5 * resolutionFactor
+    contoursFontSize = 0.2 * resolutionFactor
     mountainPeaksFontSize = 0.3 * resolutionFactor
-    riverLabelFontSize    = 0.3 * resolutionFactor
-    waterBodiesFontSize   = 0.4 * resolutionFactor
+    riverLabelFontSize = 0.3 * resolutionFactor
+    waterBodiesFontSize = 0.4 * resolutionFactor
 
-    airportMarkerSize       = 1 * resolutionFactor
-    settlementMarkerSize    = .5 * resolutionFactor
+    airportMarkerSize = 1 * resolutionFactor
+    settlementMarkerSize = .5 * resolutionFactor
     mountainPeaksMarkerSize = .2 * resolutionFactor
 
     if exagerateTerrain:
         print("Terrain exaggeration...")
         # # increase colorization in locally flat regions
-        pixelsPerDegree = map_s.shape[0] / np.abs(south-north)
-        kernel_size = 0.0125 / 2 # in degrees
-        kernel_size = int(kernel_size * pixelsPerDegree) # in pixels
+        pixelsPerDegree = map_s.shape[0] / np.abs(south - north)
+        kernel_size = 0.0125 / 2  # in degrees
+        kernel_size = int(kernel_size * pixelsPerDegree)  # in pixels
         unsharp_mask = lambda img, sigma=1, strength=1.2: np.clip(
             (((img - img.min()) / (img.max() - img.min())) + strength * (
-                        ((img - img.min()) / (img.max() - img.min())) - gaussian_filter(
-                    (img - img.min()) / (img.max() - img.min()), sigma))) * (img.max() - img.min()) + img.min(),
+                    ((img - img.min()) / (img.max() - img.min())) - gaussian_filter(
+                (img - img.min()) / (img.max() - img.min()), sigma))) * (img.max() - img.min()) + img.min(),
             img.min(), img.max()
         )
-        ax.imshow(unsharp_mask(np.copy(map_s), sigma=kernel_size, strength=1.0), extent=[west, east, south, north], origin='upper', cmap=gamma_cmap, vmin=-150, interpolation='bilinear')
+        ax.imshow(unsharp_mask(np.copy(map_s), sigma=kernel_size, strength=1.0), extent=[west, east, south, north],
+                  origin='upper', cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
     else:
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
-                  cmap=gamma_cmap, vmin=-150, interpolation='bilinear')
+                  cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
 
     print("Plotting contours...")
-    map_s_smooth = map_s # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
+    map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
     x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
     X, Y = np.meshgrid(x, y)
     min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
@@ -492,10 +546,10 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     levels_thin = np.arange(min_val, max_val, 100)
 
     print("Drawing mini contours with very thin lines...");
-    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.55', alpha=0.4, linewidths=0.03)
+    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.5, linewidths=0.03)
     print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
     print("Drawing thin contours with thin lines...");
-    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.55', alpha=0.4, linewidths=0.05)
+    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
     print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
 
     max_distance_km = 2.0  # spacing between labels
@@ -532,7 +586,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             ax.text(
                                 x_mid, y_mid, f"{level:.0f}",
                                 fontsize=contoursFontSize,
-                                color="0.55", alpha=0.5,
+                                color="0.65", alpha=0.6,
                                 ha="center", va="center",
                                 rotation=angle, rotation_mode="anchor",
                                 zorder=1, rasterized=True,
@@ -548,7 +602,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
     print("Plotting water bodies...")
     if water_bodies_gdf is not None and not water_bodies_gdf.empty:
-        water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96), edgecolor=(0.42, 0.7, 0.84), linewidth=0.1, zorder=3)
+        water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96), edgecolor=(0.21,0.55,0.77), linewidth=0.1, zorder=3)
         ax.collections[-1].set_rasterized(True)
         def has_valid_water_name(tags):
             if not isinstance(tags, dict):
@@ -597,8 +651,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         if not rivers_only.empty:
             rivers_only.plot(
                 ax=ax,
-                linewidth=0.05,
-                edgecolor=(0.0, 0.4, 0.7),
+                linewidth=0.1,
+                edgecolor=(0.21,0.55,0.77),
                 alpha=0.7,
                 zorder=2
             )
@@ -656,7 +710,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                                 max(south, min(y, north)),
                                 name,
                                 fontsize=riverLabelFontSize,
-                                color=(0, 0.3, 0.6),
+                                color=(0.21,0.55,0.77),
                                 alpha=0.8,
                                 zorder=4,
                                 ha='center',
@@ -673,9 +727,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         if not smaller_waterways.empty:
             smaller_waterways.plot(
                 ax=ax,
-                linewidth=0.025,
-                edgecolor=(0.3, 0.6, 0.9),
-                alpha=0.5,
+                linewidth=0.08,
+                edgecolor=(0.21,0.55,0.77),
+                alpha=0.7,
                 zorder=2
             )
             ax.collections[-1].set_rasterized(True)
@@ -683,33 +737,45 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     print("Plotting roads...")
     if roads_gdf is not None and not roads_gdf.empty:
         road_styles = {
-            "motorway": {"width": 0.4, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75,
-                         "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "trunk": {"width": 0.3, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75,
-                      "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "primary": {"width": 0.3, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75,
-                        "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "secondary": {"width": 0.2, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5),
-                          "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "tertiary": {"width": 0.15, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5),
-                         "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "residential": {"width": 0.075, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5),
-                            "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "unclassified": {"width": 0.075, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5),
-                             "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-            "service": {"width": 0.05, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75,
-                        "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "motorway":    {"width": 0.4,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "trunk":       {"width": 0.3,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "primary":     {"width": 0.3,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "secondary":   {"width": 0.25,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "tertiary":    {"width": 0.2,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "residential": {"width": 0.1, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "unclassified":{"width": 0.1, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "service":     {"width": 0.1,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
 
-            "footway": {"width": 0.05, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": '--'},
-            "path": {"width": 0.04, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 6, "linestyle": ':'},
-            "cycleway": {"width": 0.06, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 6, "linestyle": '-'},
-            "bridleway": {"width": 0.04, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 6, "linestyle": '-.'},
-            "steps": {"width": 0.03, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": ':'},
-            "pedestrian": {"width": 0.1, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 5, "linestyle": '-'},
-            "track": {"width": 0.05, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
-            "construction": {"width": 0.05, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
-            "proposed": {"width": 0.05, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
+            "footway":      {"width": 0.05+0.02, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": '--'},
+            "path":         {"width": 0.04+0.02, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 6, "linestyle": ':'},
+            "cycleway":     {"width": 0.06+0.02, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 6, "linestyle": '-'},
+            "bridleway":    {"width": 0.04+0.02, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 6, "linestyle": '-.'},
+            "steps":        {"width": 0.03+0.02, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": ':'},
+            "pedestrian":   {"width": 0.1,  "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 5, "linestyle": '-'},
+            "track":        {"width": 0.05+0.02, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
+            "construction": {"width": 0.05+0.02, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
+            "proposed":     {"width": 0.05+0.02, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
         }
+        # road_styles = {
+        #     "motorway":    {"width": 0.4,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "trunk":       {"width": 0.3,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "primary":     {"width": 0.3,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "secondary":   {"width": 0.2,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "tertiary":    {"width": 0.15,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "residential": {"width": 0.075, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "unclassified":{"width": 0.075, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #     "service":     {"width": 0.05,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+        #
+        #     "footway":      {"width": 0.05, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": '--'},
+        #     "path":         {"width": 0.04, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 6, "linestyle": ':'},
+        #     "cycleway":     {"width": 0.06, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 6, "linestyle": '-'},
+        #     "bridleway":    {"width": 0.04, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 6, "linestyle": '-.'},
+        #     "steps":        {"width": 0.03, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": ':'},
+        #     "pedestrian":   {"width": 0.1,  "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 5, "linestyle": '-'},
+        #     "track":        {"width": 0.05, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
+        #     "construction": {"width": 0.05, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
+        #     "proposed":     {"width": 0.05, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
+        # }
 
         for road_type in tqdm(roads_gdf["highway"].unique(), desc="Drawing roads", dynamic_ncols=True, leave=False):
             subset = roads_gdf[roads_gdf["highway"] == road_type]
@@ -772,18 +838,25 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         ax.collections[-1].set_rasterized(True)
 
     print("Plotting places and labels...")
-    if places_gdf is not None and not places_gdf.empty:
-        # Define styles for settlement places (city, town, village)
-        # These now use the 'type' column, as it's consistently generated
-        settlement_types_map = {
-            "city":    {"settlementMarkerSize": settlementMarkerSize,         "settlementsFontSize": settlementsFontSize,         "style":'normal', "color":[0.1,0.1,0.1]},
-            "town":    {"settlementMarkerSize": settlementMarkerSize * 0.8,   "settlementsFontSize": settlementsFontSize * 0.8,   "style":'normal', "color":[0.1,0.1,0.1]},
-            "village": {"settlementMarkerSize": settlementMarkerSize * 0.4,   "settlementsFontSize": settlementsFontSize * 0.5,   "style":'normal', "color":[0.1,0.1,0.1]},
-            "suburb":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.3,   "style":'italic', "color":[0.25,0.25,0.25]},
-            "hamlet":  {"settlementMarkerSize": settlementMarkerSize * 0,     "settlementsFontSize": settlementsFontSize * 0.3,   "style":'italic', "color":[0.25,0.25,0.25]}
-        }
+    min_label_distance_km = 0.5  # minimum distance between settlement labels
+    placed_labels = []
 
+    if places_gdf is not None and not places_gdf.empty:
+        settlement_types_map = {
+            "city": {"settlementMarkerSize": settlementMarkerSize, "settlementsFontSize": settlementsFontSize,
+                     "style": 'normal', "color": [0.1, 0.1, 0.1]},
+            "town": {"settlementMarkerSize": settlementMarkerSize * 0.8,
+                     "settlementsFontSize": settlementsFontSize * 0.8, "style": 'normal', "color": [0.1, 0.1, 0.1]},
+            "village": {"settlementMarkerSize": settlementMarkerSize * 0.4,
+                        "settlementsFontSize": settlementsFontSize * 0.5, "style": 'normal', "color": [0.1, 0.1, 0.1]},
+            "suburb": {"settlementMarkerSize": 0,
+                       "settlementsFontSize": settlementsFontSize * 0.3, "style": 'italic',
+                       "color": [0.25, 0.25, 0.25]},
+            "hamlet": {"settlementMarkerSize": 0,
+                       "settlementsFontSize": settlementsFontSize * 0.3, "style": 'italic', "color": [0.25, 0.25, 0.25]}
+        }
         # Define which POI categories you want to plot from the 'type' column
+        # keep this block for later use
         whichPois = [
             # "monastery", "church", "castle", "monument", "ruins",
             # "archaeological_site"
@@ -791,13 +864,12 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
         # Filter places_gdf based on its 'type' column
         settlement_places = places_gdf[places_gdf["type"].isin(settlement_types_map.keys())]
-        # other_pois = places_gdf[places_gdf["type"].isin(whichPois)]
 
-        # --- Logic for Cities, Towns, Villages (using 'type' for filtering) ---
         if not settlement_places.empty:
             pbar = tqdm(settlement_types_map.items(), dynamic_ncols=True, leave=False)
             for place_type, scales in pbar:
-                pbar.set_description(f"Drawing settlements {place_type}"); pbar.update(1)
+                pbar.set_description(f"Drawing settlements {place_type}");
+                pbar.update(1)
                 subset = settlement_places[settlement_places["type"] == place_type]
                 if not subset.empty:
                     marker_size = scales["settlementMarkerSize"] ** 2
@@ -806,11 +878,24 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     color = scales['color']
                     ax.scatter(subset.geometry.x, subset.geometry.y, s=marker_size, color=(0.1, 0.1, 0.1), zorder=6,
                                linewidths=0)
+
                     for _, row in subset.iterrows():
                         if row.get("name"):  # Only label if a name exists
-                            ax.text(row.geometry.x, row.geometry.y, row["name"], fontsize=label_size, ha="center",
-                                    va="bottom", rasterized = True, style=text_style,
-                                    color=color, zorder=7)
+                            x, y = row.geometry.x, row.geometry.y
+                            # Check distance to all previously placed labels
+                            if all(haversine_distance(y, x, py, px) >= min_label_distance_km for py, px in
+                                   placed_labels):
+                                ax.text(
+                                    x, y, row["name"],
+                                    fontsize=label_size,
+                                    ha="center",
+                                    va="bottom",
+                                    rasterized=True,
+                                    style=text_style,
+                                    color=color,
+                                    zorder=7
+                                )
+                                placed_labels.append((y, x))  # store as (lat, lon)
 
     # Airports: plot as dark blue plane markers (triangle up or custom marker)
     print("Plotting airports...")
@@ -827,7 +912,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                 x, y = centroid.x, centroid.y
 
             ax.text(x, y, "✈", fontsize=marker_size, ha='center', va='top',
-                    color='darkblue', zorder=7, alpha=.8, rasterized = True)
+                    color='darkblue', zorder=7, alpha=.8, rasterized=True)
 
             # Optionally label airports by name
             words = re.split(r"[ -]", row.get('tags', {}).get('name', ''))
@@ -837,7 +922,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         fontsize=airportsFontSize,
                         ha='center', va='bottom',
                         color='darkblue', fontfamily='serif', style='italic',
-                        zorder=8, alpha=.8, rasterized = True)
+                        zorder=8, alpha=.8, rasterized=True)
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks...")
@@ -845,7 +930,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         peaks_settings_map = {
             "mountain_peak": {"size_scale": 6.0, "text_scale_factor": 0.25},
         }
-        ax.scatter(mountain_peaks_gdf.geometry.x, mountain_peaks_gdf.geometry.y, s=(mountainPeaksMarkerSize) ** 2, c='darkgreen',
+        ax.scatter(mountain_peaks_gdf.geometry.x, mountain_peaks_gdf.geometry.y, s=(mountainPeaksMarkerSize) ** 2,
+                   c='darkgreen',
                    marker='^', zorder=6, linewidths=0)
         for _, row in mountain_peaks_gdf.iterrows():
             if row.get("tags")['name']:
@@ -855,13 +941,14 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     label_text = f"{name}\n{ele} m"
                 else:
                     label_text = name
-                ax.text(row.geometry.x, row.geometry.y, label_text, fontsize=mountainPeaksFontSize, ha="center", va="bottom",
-                        color='darkgreen', fontfamily='serif', style='italic', zorder=7, rasterized = True)
+                ax.text(row.geometry.x, row.geometry.y, label_text, fontsize=mountainPeaksFontSize, ha="center",
+                        va="bottom",
+                        color='darkgreen', fontfamily='serif', style='italic', zorder=7, rasterized=True)
 
     # --- Plot country boundaries ---
     print("Plotting country boundaries...")
     if country_boundaries_gdf is not None and not country_boundaries_gdf.empty:
-        country_boundaries_gdf.plot( # red thick line
+        country_boundaries_gdf.plot(  # red thick line
             ax=ax,
             facecolor='none',
             edgecolor=(0.7, 0.2, 0.2),
@@ -871,13 +958,13 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             zorder=4
         )
         ax.collections[-1].set_rasterized(True)
-        country_boundaries_gdf.plot( # black dashed thin line
+        country_boundaries_gdf.plot(  # black dashed thin line
             ax=ax,
             facecolor='none',
             edgecolor=(0.1, 0.1, 0.1),
             linewidth=.25,
             alpha=.9,
-            linestyle=(0, (3,5,1,5)), # dashdotted
+            linestyle=(0, (3, 5, 1, 5)),  # dashdotted
             joinstyle='round',
             zorder=5
         )
@@ -904,9 +991,10 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 
 def main():
-    # rasterPath = r"./2025-08-14_11-00-31/heightmap_z11_lon_20.3910_23.2028_lat_40.7142_42.5528_reslon_0.000687_reslat_0.000513.npz" # NMK lowres
-    # rasterPath = r"./2025-08-14_16-17-43/heightmap_z12_lon_20.3908_23.1151_lat_40.7807_42.4882_reslon_0.000343_reslat_0.000257.npz"  # NMK hires
-    rasterPath = r".\10_34.6_32.3_35.7_34.5\heightmap_z10_lon_32.0_34.8_lat_34.3_35.7.npz"
+
+    # rasterPath = r".\11_23.1_20.3_42.4_40.7\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
+    rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
+    # rasterPath = r".\13_23.1_20.3_42.4_40.7\heightmap_z13_lon_20.3_23.1_lat_40.7_42.5.npz"  # NMK zoom 13
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
@@ -914,13 +1002,12 @@ def main():
     # resolutionFactor, dpi = 4, int(800)
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
-    resolutionFactor, dpi = 1.5, int(1500) # good middle ground
+    resolutionFactor, dpi = 1.5, int(1500)  # good middle ground
     ### lowres settings
     # resolutionFactor, dpi = 2, int(640)
 
-
     print("Starting map generation process...")
-    #mapzen tiles usually come in as Web Mercator, projcet to lat-lon rectangular projection
+    # mapzen tiles usually come in as Web Mercator, projcet to lat-lon rectangular projection
     elev_4326, meta_4326 = reproject_npz_to_epsg4326(rasterPath)
 
     map_data = elev_4326
@@ -933,24 +1020,38 @@ def main():
     print("Raster and metadata loaded!")
     subsample = 1
     map_s = map_data[::subsample, ::subsample]
-    map_s[map_s < 0] = -np.max(map_s) * 0.03 # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
+    # map_s[map_s <= 0] = - np.max(map_s) * 0.05  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
 
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
 
-    places_gdf             = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
-    roads_gdf              = load_or_fetch("roads", rasterPath, south, north, west, east, get_roads_from_osm)
-    structures_gdf         = load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
-    rivers_gdf             = load_or_fetch("rivers", rasterPath, south, north, west, east, get_rivers_from_osm)
-    water_bodies_gdf       = load_or_fetch("water_bodies", rasterPath, south, north, west, east, get_water_bodies_osm2geojson)
-    mountain_peaks_gdf     = load_or_fetch("mountain_peaks", rasterPath, south, north, west, east, get_mountain_peaks_osm2geojson)
-    railroads_gdf          = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
-    airports_gdf           = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
-    country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
+    places_gdf = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
+    roads_gdf = load_or_fetch("roads", rasterPath, south, north, west, east, get_roads_from_osm)
+    structures_gdf = load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
+    rivers_gdf = load_or_fetch("rivers", rasterPath, south, north, west, east, get_rivers_from_osm)
+    water_bodies_gdf = load_or_fetch("water_bodies", rasterPath, south, north, west, east, get_water_bodies_osm2geojson)
+    mountain_peaks_gdf = load_or_fetch("mountain_peaks", rasterPath, south, north, west, east,
+                                       get_mountain_peaks_osm2geojson)
+    railroads_gdf = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
+    airports_gdf = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
+    country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east,
+                                           get_country_boundaries_from_osm)
+
+    # --- ADDED: Ensure 'tags' column consistency after loading ---
+    if 'tags' in water_bodies_gdf.columns:
+        water_bodies_gdf['tags'] = water_bodies_gdf['tags'].apply(
+            lambda x: x if isinstance(x, dict) else {}
+        )
+    else:
+        water_bodies_gdf['tags'] = [{} for _ in range(len(water_bodies_gdf))]
+    # --- END ADDITION ---
 
     # Apply color exaggeration
     exagerateTerrain = True
-    fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north,
-                                    east, dpi=dpi, resolutionFactor=resolutionFactor, resolution=resolution, exagerateTerrain=exagerateTerrain)
+    fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
+                                        mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
+                                        south, west, north,
+                                        east, dpi=dpi, resolutionFactor=resolutionFactor, resolution=resolution,
+                                        exagerateTerrain=exagerateTerrain)
 
     output_filename = (
         f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution}_ex={exagerateTerrain}'
@@ -961,7 +1062,7 @@ def main():
     )
     print(f"Saving map to {output_filename}...")
     start_time = time.time()
-    fig.savefig(output_filename, dpi=dpi, bbox_inches='tight', pad_inches=0)
+    fig.savefig(sanitize_filename(output_filename), dpi=dpi, bbox_inches='tight', pad_inches=0)
     end_time = time.time()
     print(f"Map saved successfully in {end_time - start_time:.2f} seconds.")
     print("Process finished.")
