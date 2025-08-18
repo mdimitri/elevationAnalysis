@@ -558,85 +558,90 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
                   cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
 
-    # print("Plotting contours...")
-    # map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
-    # x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
-    # X, Y = np.meshgrid(x, y)
-    # min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
-    # min_val = 0
-    # max_val = max_val // 100 * 100 + 100
-    #
-    # levels_mini = np.arange(min_val, max_val, 10)
-    # levels_thin = np.arange(min_val, max_val, 100)
-    #
-    # print("Drawing mini contours with very thin lines...");
-    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.4, linewidths=0.02)
-    # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
-    # print("Drawing thin contours with thin lines...");
-    # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
-    # print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
-    #
-    # max_distance_km = 2.0  # spacing between labels
-    # for level_idx, (level, collection) in enumerate(
-    #         tqdm(zip(contours_thin.levels, contours_thin.collections),
-    #              total=len(contours_thin.levels),
-    #              desc="Drawing contour labels",
-    #              position=0,  # Explicitly set position for the outer bar
-    #              leave=True,
-    #              dynamic_ncols=False)):
-    #
-    #     collection.set_rasterized(True)
-    #     placed_labels = []
-    #
-    #     # Count all segments for this level
-    #     total_segments = sum(
-    #         max(len(path.vertices) - 1, 0) for path in collection.get_paths()
-    #     )
-    #     seg_bar = tqdm(total=total_segments,
-    #                    desc=f"{level}m",
-    #                    position=1,  # Place the inner bar on the next line
-    #                    leave=False,
-    #                    dynamic_ncols=False,
-    #                    mininterval=0.1)
-    #
-    #     for path_idx, path in enumerate(collection.get_paths()):
-    #         vertices = path.vertices
-    #         if len(vertices) < 2:
-    #             continue
-    #
-    #         deltas = [
-    #             haversine_distance(lat1, lon1, lat2, lon2)
-    #             for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
-    #         ]
-    #
-    #         cum_dist = 0.0
-    #         for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
-    #             cum_dist += seg_len
-    #             seg_bar.update(1)
-    #
-    #             if cum_dist >= max_distance_km:
-    #                 if cum_dist <= max_distance_km * 1.5:
-    #                     x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
-    #                     if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
-    #                            for py, px in placed_labels):
-    #                         angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-    #                         if angle > 90:
-    #                             angle -= 180
-    #                         elif angle < -90:
-    #                             angle += 180
-    #                         ax.text(
-    #                             x_mid, y_mid, f"{level:.0f}",
-    #                             fontsize=contoursFontSize,
-    #                             color="0.65", alpha=0.6,
-    #                             ha="center", va="center",
-    #                             rotation=angle, rotation_mode="anchor",
-    #                             zorder=1, rasterized=True,
-    #                         )
-    #                         placed_labels.append((y_mid, x_mid))
-    #                 cum_dist = 0.0
-    #
-    #     seg_bar.close()
-    # print("Finished labeling contours.")
+    print("Plotting contours...")
+    map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
+    x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
+    X, Y = np.meshgrid(x, y)
+    min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
+    min_val = 0
+    max_val = max_val // 100 * 100 + 100
+
+    levels_mini = np.arange(min_val, max_val, 10)
+    levels_thin = np.arange(min_val, max_val, 100)
+
+    print("Drawing mini contours with very thin lines...");
+    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.4, linewidths=0.02)
+    print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
+    print("Drawing thin contours with thin lines...");
+    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
+    print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
+
+    max_distance_km = 2.0  # spacing between labels
+    for level_idx, (level, collection) in enumerate(
+            tqdm(zip(contours_thin.levels, contours_thin.collections),
+                 total=len(contours_thin.levels),
+                 desc="Drawing contour labels",
+                 position=0,  # Explicitly set position for the outer bar
+                 leave=True,
+                 dynamic_ncols=False)):
+
+        collection.set_rasterized(True)
+        placed_labels = []
+
+        # Count all segments for this level
+        total_segments = sum(
+            max(len(path.vertices) - 1, 0) for path in collection.get_paths()
+        )
+        seg_bar = tqdm(total=total_segments,
+                       desc=f"{level}m",
+                       position=1,  # Place the inner bar on the next line
+                       leave=False,
+                       dynamic_ncols=False,
+                       mininterval=0.1)
+
+        for path_idx, path in enumerate(collection.get_paths()):
+            vertices = path.vertices
+            if len(vertices) < 2:
+                continue
+
+            deltas = [
+                haversine_distance(lat1, lon1, lat2, lon2)
+                for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
+            ]
+
+            cum_dist = 0.0
+            for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
+                cum_dist += seg_len
+                seg_bar.update(1)
+
+                if cum_dist >= max_distance_km:
+                    if cum_dist <= max_distance_km * 1.5:
+                        x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
+                        if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
+                               for py, px in placed_labels):
+                            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+                            if angle > 90:
+                                angle -= 180
+                            elif angle < -90:
+                                angle += 180
+                            ax.text(
+                                x_mid, y_mid, f"{level:.0f}",
+                                fontsize=contoursFontSize,
+                                color="0.65", alpha=0.6,
+                                ha="center", va="center",
+                                rotation=angle, rotation_mode="anchor",
+                                zorder=1, rasterized=True,
+                            )
+                            placed_labels.append((y_mid, x_mid))
+                    cum_dist = 0.0
+
+        seg_bar.close()
+    print("Finished labeling contours.")
+
+    print("Plotting structures...")
+    if structures_gdf is not None and not structures_gdf.empty:
+        structures_gdf.plot(ax=ax, edgecolor='0.4', facecolor='0.6', alpha=0.5, linewidth=0.05)
+        ax.collections[-1].set_rasterized(True)
 
     print("Plotting water bodies...")
     if water_bodies_gdf is not None and not water_bodies_gdf.empty:
