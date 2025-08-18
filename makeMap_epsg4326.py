@@ -691,6 +691,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             fontfamily="serif", style="italic",
                             color=(0, 0.3, 0.6), alpha=0.8,
                             ha="center", va="center",
+                            path_effects=[patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.2, 0.5, 0.8), capstyle="round")],
                             rasterized=True, zorder=4)
                     placed_coords.append((lat, lon))
 
@@ -802,6 +803,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         name,
                         fontsize=riverLabelFontSize,
                         color=(0.21, 0.55, 0.77),
+                        path_effects=[patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.41, 0.75, 0.97), capstyle="round")],
                         alpha=0.8,
                         zorder=4,
                         ha='center',
@@ -1131,7 +1133,7 @@ def main():
     # resolutionFactor, dpi = 4, int(800)
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
-    resolutionFactor, dpi = 1.5, int(1500)  # good middle ground
+    resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
     ### lowres settings
     # resolutionFactor, dpi = 2, int(640)
 
