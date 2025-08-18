@@ -13,6 +13,7 @@ import rasterio
 from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import pyproj
+# from pyproj import datadir
 from shapely.geometry import box
 from shapely.ops import transform as shapely_transform
 from skimage import exposure
@@ -21,6 +22,9 @@ from scipy.spatial import cKDTree
 from shapely.ops import polygonize, unary_union  # Added for polygonize
 import colorsys
 import matplotlib.patheffects as patheffects
+
+# projDataDirPath = datadir.get_data_dir()
+# os.environ['PROJ_DATA'] = projDataDirPath
 
 ## origianl CM terrain
 # terrain_colors = [
@@ -233,7 +237,7 @@ def get_structures_from_osm(lat1, lat2, lon1, lon2):
 
 def get_roads_from_osm(lat1, lat2, lon1, lon2):
     # query = f'[out:json];way["highway"]({lat1},{lon1},{lat2},{lon2});out geom;'
-    query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|unclassified|service"]({lat1},{lon1},{lat2},{lon2});out geom;'
+    query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|residential|unclassified|service"]({lat1},{lon1},{lat2},{lon2});out geom;'
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), lambda elements: gpd.GeoDataFrame([
         {"highway": el["tags"].get("highway"),
          "geometry": LineString([(pt["lon"], pt["lat"]) for pt in el["geometry"]])}
@@ -414,9 +418,9 @@ def get_airports_osm2geojson(lat1, lat2, lon1, lon2):
     query = (
         f'[out:json][timeout:180];'
         f'('
-        f'node["aeroway"="aerodrome"]({lat1},{lon1},{lat2},{lon2});'
-        f'way["aeroway"="aerodrome"]({lat1},{lon1},{lat2},{lon2});'
-        f'relation["aeroway"="aerodrome"]({lat1},{lon1},{lat2},{lon2});'
+        f'node["aeroway"~"aerodrome|runway|apron|taxiway"]({lat1},{lon1},{lat2},{lon2});'
+        f'way["aeroway"~"aerodrome|runway|apron|taxiway"]({lat1},{lon1},{lat2},{lon2});'
+        f'relation["aeroway"~"aerodrome|runway|apron|taxiway"]({lat1},{lon1},{lat2},{lon2});'
         f');'
         f'out body;'
         f'>;'
@@ -425,6 +429,8 @@ def get_airports_osm2geojson(lat1, lat2, lon1, lon2):
 
     def parse_elements(elements):
         geojson = osm2geojson.json2geojson({"elements": elements})
+        if not geojson["features"]:
+            return gpd.GeoDataFrame(columns=["name", "geometry"], crs="EPSG:4326")
         return gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
 
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "airports")
@@ -552,90 +558,85 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
                   cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
 
-    print("Plotting contours...")
-    map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
-    x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
-    X, Y = np.meshgrid(x, y)
-    min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
-    min_val = 0
-    max_val = max_val // 100 * 100 + 100
-
-    levels_mini = np.arange(min_val, max_val, 20)
-    levels_thin = np.arange(min_val, max_val, 100)
-
-    print("Drawing mini contours with very thin lines...");
-    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.5, linewidths=0.03)
-    print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
-    print("Drawing thin contours with thin lines...");
-    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
-    print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
-
-    max_distance_km = 2.0  # spacing between labels
-    for level_idx, (level, collection) in enumerate(
-            tqdm(zip(contours_thin.levels, contours_thin.collections),
-                 total=len(contours_thin.levels),
-                 desc="Drawing contour labels",
-                 position=0,  # Explicitly set position for the outer bar
-                 leave=True,
-                 dynamic_ncols=False)):
-
-        collection.set_rasterized(True)
-        placed_labels = []
-
-        # Count all segments for this level
-        total_segments = sum(
-            max(len(path.vertices) - 1, 0) for path in collection.get_paths()
-        )
-        seg_bar = tqdm(total=total_segments,
-                       desc=f"{level}m",
-                       position=1,  # Place the inner bar on the next line
-                       leave=False,
-                       dynamic_ncols=False,
-                       mininterval=0.1)
-
-        for path_idx, path in enumerate(collection.get_paths()):
-            vertices = path.vertices
-            if len(vertices) < 2:
-                continue
-
-            deltas = [
-                haversine_distance(lat1, lon1, lat2, lon2)
-                for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
-            ]
-
-            cum_dist = 0.0
-            for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
-                cum_dist += seg_len
-                seg_bar.update(1)
-
-                if cum_dist >= max_distance_km:
-                    if cum_dist <= max_distance_km * 1.5:
-                        x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
-                        if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
-                               for py, px in placed_labels):
-                            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                            if angle > 90:
-                                angle -= 180
-                            elif angle < -90:
-                                angle += 180
-                            ax.text(
-                                x_mid, y_mid, f"{level:.0f}",
-                                fontsize=contoursFontSize,
-                                color="0.65", alpha=0.6,
-                                ha="center", va="center",
-                                rotation=angle, rotation_mode="anchor",
-                                zorder=1, rasterized=True,
-                            )
-                            placed_labels.append((y_mid, x_mid))
-                    cum_dist = 0.0
-
-        seg_bar.close()
-    print("Finished labeling contours.")
-
-    print("Plotting structures...")
-    if structures_gdf is not None and not structures_gdf.empty:
-        structures_gdf.plot(ax=ax, edgecolor='0.4', facecolor='0.6', alpha=0.5, linewidth=0.05)
-        ax.collections[-1].set_rasterized(True)
+    # print("Plotting contours...")
+    # map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
+    # x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
+    # X, Y = np.meshgrid(x, y)
+    # min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
+    # min_val = 0
+    # max_val = max_val // 100 * 100 + 100
+    #
+    # levels_mini = np.arange(min_val, max_val, 20)
+    # levels_thin = np.arange(min_val, max_val, 100)
+    #
+    # print("Drawing mini contours with very thin lines...");
+    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.5, linewidths=0.03)
+    # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
+    # print("Drawing thin contours with thin lines...");
+    # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
+    # print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
+    #
+    # max_distance_km = 2.0  # spacing between labels
+    # for level_idx, (level, collection) in enumerate(
+    #         tqdm(zip(contours_thin.levels, contours_thin.collections),
+    #              total=len(contours_thin.levels),
+    #              desc="Drawing contour labels",
+    #              position=0,  # Explicitly set position for the outer bar
+    #              leave=True,
+    #              dynamic_ncols=False)):
+    #
+    #     collection.set_rasterized(True)
+    #     placed_labels = []
+    #
+    #     # Count all segments for this level
+    #     total_segments = sum(
+    #         max(len(path.vertices) - 1, 0) for path in collection.get_paths()
+    #     )
+    #     seg_bar = tqdm(total=total_segments,
+    #                    desc=f"{level}m",
+    #                    position=1,  # Place the inner bar on the next line
+    #                    leave=False,
+    #                    dynamic_ncols=False,
+    #                    mininterval=0.1)
+    #
+    #     for path_idx, path in enumerate(collection.get_paths()):
+    #         vertices = path.vertices
+    #         if len(vertices) < 2:
+    #             continue
+    #
+    #         deltas = [
+    #             haversine_distance(lat1, lon1, lat2, lon2)
+    #             for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
+    #         ]
+    #
+    #         cum_dist = 0.0
+    #         for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
+    #             cum_dist += seg_len
+    #             seg_bar.update(1)
+    #
+    #             if cum_dist >= max_distance_km:
+    #                 if cum_dist <= max_distance_km * 1.5:
+    #                     x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
+    #                     if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
+    #                            for py, px in placed_labels):
+    #                         angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+    #                         if angle > 90:
+    #                             angle -= 180
+    #                         elif angle < -90:
+    #                             angle += 180
+    #                         ax.text(
+    #                             x_mid, y_mid, f"{level:.0f}",
+    #                             fontsize=contoursFontSize,
+    #                             color="0.65", alpha=0.6,
+    #                             ha="center", va="center",
+    #                             rotation=angle, rotation_mode="anchor",
+    #                             zorder=1, rasterized=True,
+    #                         )
+    #                         placed_labels.append((y_mid, x_mid))
+    #                 cum_dist = 0.0
+    #
+    #     seg_bar.close()
+    # print("Finished labeling contours.")
 
     print("Plotting water bodies...")
     if water_bodies_gdf is not None and not water_bodies_gdf.empty:
@@ -657,8 +658,14 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
         # Filter for label-worthy water bodies, sort by size (descending)
         water_names_gdf = water_bodies_gdf[water_bodies_gdf["tags"].apply(has_valid_water_name)]
-        water_names_gdf = water_names_gdf.assign(area=water_names_gdf.geometry.area).sort_values("area",
-                                                                                                 ascending=False)
+        # Re-project to a projected CRS
+        water_names_gdf_projected = water_names_gdf.to_crs("EPSG:3857")
+
+        # Calculate the area in square meters and assign it back to the original GeoDataFrame
+        water_names_gdf = water_names_gdf.assign(area=water_names_gdf_projected.geometry.area)
+
+        # Sort by the new, correct area
+        water_names_gdf = water_names_gdf.sort_values("area", ascending=False)
 
         min_water_label_distance_km = 2.0  # tweak for density control
         placed_coords_deg = []  # Store placed coordinates in degrees (lat, lon)
@@ -679,11 +686,19 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             if len(words) == 2:
                 name = "\n".join(words)
 
-            texts_for_plot.append((x, y, name))
+            texts_for_plot.append((x, y, name, row['area']))  # Add area to the tuple
             coords_deg_for_tree.append((y, x))  # Store lat, lon in degrees
 
         if texts_for_plot:
             coords_deg_for_tree_np = np.array(coords_deg_for_tree)
+
+            # New logic to handle font size adaptation
+            areas = [t[3] for t in texts_for_plot]
+            min_area = min(areas)
+            max_area = max(areas)
+
+            # Check to prevent division by zero if all areas are the same
+            area_range = max_area - min_area
 
             # Convert coordinates to radians for the Haversine KDTree
             coords_rad_for_tree = np.radians(coords_deg_for_tree_np)
@@ -694,12 +709,13 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             # Convert desired distance in km to radians
             radius_rad = min_water_label_distance_km / earth_radius_km
 
-            for (x_lon, y_lat, label) in texts_for_plot:
+            for (x_lon, y_lat, label, area) in texts_for_plot:
                 # Get the original lat, lon in degrees for this point
                 current_lat_deg, current_lon_deg = y_lat, x_lon
 
                 # Convert the current point to radians for querying the KDTree
-                current_lat_rad, current_lon_rad = np.radians([current_lat_deg, current_lon_deg])
+                current_lat_rad = np.radians(current_lat_deg)
+                current_lon_rad = np.radians(current_lon_deg)
 
                 # Query the tree for points within the specified radius (in radians)
                 # This will return indices of points within the Haversine distance
@@ -708,13 +724,25 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                 # Check if any of the nearby points (including itself) have already been placed
                 # We compare the original degree coordinates for this check
                 if all(tuple(coords_deg_for_tree_np[i]) not in placed_coords_deg for i in idxs):
+                    # Calculate the scaling factor based on area
+                    if area_range > 0:
+                        normalized_area = (area - min_area) / area_range
+                        # Scaling factor from 1.0 to 2.0
+                        area_scale_factor = 1.0 + normalized_area
+                    else:
+                        # If all areas are the same, use a factor of 1.0
+                        area_scale_factor = 1.0
+
+                    # Adjust the font size
+                    scaled_font_size = waterBodiesFontSize * area_scale_factor
+
                     ax.text(x_lon, y_lat, label,
-                            fontsize=waterBodiesFontSize,
+                            fontsize=scaled_font_size,  # Use the scaled font size
                             fontfamily="serif", style="italic",
                             color=(0, 0.3, 0.6), alpha=0.8,
                             ha="center", va="center",
                             path_effects=[
-                                patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.2, 0.5, 0.8),
+                                patheffects.withStroke(linewidth=scaled_font_size * 0.1, foreground=(0.2, 0.5, 0.8),
                                                        capstyle="round")],
                             rasterized=True, zorder=4)
                     # Add the degree coordinates of the placed label to the list
@@ -995,32 +1023,78 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     zorder=8
                 )
 
-    # Airports: plot as dark blue plane markers (triangle up or custom marker)
-    print("Plotting airports...")
+
+    print("Plotting airports and their structures...")
     if airports_gdf is not None and not airports_gdf.empty:
-        marker_size = airportMarkerSize
+        # Separate features by aeroway type for different plotting styles
+        aerodrome_gdf = airports_gdf[airports_gdf['tags'].apply(lambda x: x.get('aeroway') == 'aerodrome')]
+        runway_gdf = airports_gdf[airports_gdf['tags'].apply(lambda x: x.get('aeroway') == 'runway')]
+        apron_gdf = airports_gdf[airports_gdf['tags'].apply(lambda x: x.get('aeroway') == 'apron')]
+        taxiway_gdf = airports_gdf[airports_gdf['tags'].apply(lambda x: x.get('aeroway') == 'taxiway')]
 
-        for _, row in airports_gdf.iterrows():
-            geom = row.geometry
-            # Get centroid for polygons, or use point directly
-            if geom.geom_type == 'Point':
-                x, y = geom.x, geom.y
-            else:
-                centroid = geom.centroid
-                x, y = centroid.x, centroid.y
+        # Plot Aprons as filled gray areas (Polygons)
+        if not apron_gdf.empty:
+            apron_gdf.plot(
+                ax=ax,
+                facecolor=(0.9, 0.9, 0.9),  # Light gray
+                edgecolor=(0.7, 0.7, 0.7),
+                linewidth=0.1,
+                alpha=0.5,
+                zorder=5,
+                rasterized=True
+            )
+            ax.collections[-1].set_rasterized(True)
 
-            ax.text(x, y, "✈", fontsize=marker_size, ha='center', va='top',
-                    color='darkblue', zorder=7, alpha=.8, rasterized=True)
+        # Plot Runways as thick dark gray lines (LineStrings or Polygons)
+        if not runway_gdf.empty:
+            runway_gdf.plot(
+                ax=ax,
+                facecolor='none',
+                edgecolor=(0.3, 0.3, 0.3),  # Dark gray
+                linewidth=.4,
+                alpha=0.5,
+                zorder=6,
+                rasterized=True
+            )
+            ax.collections[-1].set_rasterized(True)
 
-            # Optionally label airports by name
-            words = re.split(r"[ -]", row.get('tags', {}).get('name', ''))
-            name = "\n".join(" ".join(words[i:i + 2]) for i in range(0, len(words), 2))
-            if name:
-                ax.text(x, y, name,
-                        fontsize=airportsFontSize,
-                        ha='center', va='bottom',
-                        color='darkblue', fontfamily='serif', style='italic',
-                        zorder=8, alpha=.8, rasterized=True)
+        # Plot Taxiways as thinner dark gray dashed lines
+        if not taxiway_gdf.empty:
+            taxiway_gdf.plot(
+                ax=ax,
+                facecolor='none',
+                edgecolor=(0.5, 0.5, 0.5),  # Gray
+                linewidth=0.2,
+                alpha=0.5,
+                linestyle='--',
+                zorder=6,
+                rasterized=True
+            )
+            ax.collections[-1].set_rasterized(True)
+
+        # Plot Aerodrome as a symbol at the centroid of the feature (Point or Polygon)
+        if not aerodrome_gdf.empty:
+            for _, row in aerodrome_gdf.iterrows():
+                geom = row.geometry
+                # Use centroid for Polygons, or use point directly
+                if geom.geom_type == 'Point':
+                    x, y = geom.x, geom.y
+                else:
+                    centroid = geom.centroid
+                    x, y = centroid.x, centroid.y
+
+                ax.text(x, y, "✈", fontsize=airportMarkerSize, ha='center', va='top',
+                        color='darkblue', zorder=7, alpha=.8, rasterized=True)
+
+                # Optionally label airports by name
+                words = re.split(r"[ -]", row.get('tags', {}).get('name', ''))
+                name = "\n".join(" ".join(words[i:i + 2]) for i in range(0, len(words), 2))
+                if name:
+                    ax.text(x, y, name,
+                            fontsize=airportsFontSize,
+                            ha='center', va='bottom',
+                            color='darkblue', fontfamily='serif', style='italic',
+                            zorder=8, alpha=.8, rasterized=True)
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks (Haversine KDTree)...")
@@ -1156,7 +1230,7 @@ def main():
     print("Raster and metadata loaded!")
     subsample = 1
     map_s = map_data[::subsample, ::subsample]
-    map_s[map_s <= 0] = - np.max(map_s) * 1  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
+    map_s[map_s <= -1] = - np.max(map_s) * 1  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
 
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
 
