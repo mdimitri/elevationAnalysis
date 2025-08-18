@@ -252,73 +252,78 @@ class MapSelectorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Height map downloader")
-        self.root.state('zoomed')
+        # self.root.geometry("1200x800")
+        # self.root.minsize(1200, 800)
 
         self.world_gdf = None
         self.rect_patch = None
         self.start_lon_lat = None
         self.end_lon_lat = None
 
-        # --- Title above map ---
-        title_label = tk.Label(
-            root,
-            text="Height map downloader",
-            font=("Arial", 20, "bold")
-        )
-        title_label.pack(pady=8)
+        # Configure root grid
+        self.root.rowconfigure(1, weight=1)  # map row expands
+        self.root.columnconfigure(0, weight=1)
 
-        self.fig, self.ax = plt.subplots(figsize=(8, 6), layout='constrained')
+        # --- Top: Title ---
+        title_label = tk.Label(root, text="Height map downloader", font=("Arial", 16, "bold"))
+        title_label.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+
+        # --- Middle: Map ---
+        self.fig, self.ax = plt.subplots(figsize=(7, 3.5), layout='constrained')
+        self.fig.tight_layout()
         self.ax.set_aspect('equal')
         self.ax.set_facecolor("aliceblue")
         self.ax.set_xticks([])
         self.ax.set_yticks([])
 
-        self.canvas_widget = FigureCanvasTkAgg(self.fig, master=self.root)
+        self.canvas_widget = FigureCanvasTkAgg(self.fig, master=root)
         self.canvas_widget.draw()
         self.canvas = self.canvas_widget.get_tk_widget()
-        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.canvas.grid(row=1, column=0, sticky="nsew")  # expands with window
 
-        self.toolbar = NavigationToolbar2Tk(self.canvas_widget, self.root, pack_toolbar=False)
+        self.toolbar = NavigationToolbar2Tk(self.canvas_widget, root, pack_toolbar=False)
         self.toolbar.update()
-        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.toolbar.grid(row=2, column=0, sticky="ew")
 
-        # --- Controls info label (bottom-right) ---
-        controls_label = tk.Label(
-            root,
+        # --- Bottom: Controls ---
+        self.controls_frame = tk.Frame(root)
+        self.controls_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+
+        self.coords_label = tk.Label(self.controls_frame, text="Selected Area: (N/A)", font=("Arial", 12))
+        self.coords_label.pack(pady=2)
+
+        zoom_label = tk.Label(self.controls_frame, text="Level of detail:", font=("Arial", 12))
+        zoom_label.pack(pady=2)
+
+        self.zoom_level = tk.IntVar(value=9)
+        self.zoom_dropdown = ttk.Combobox(
+            self.controls_frame, textvariable=self.zoom_level,
+            values=list(range(8, 15)), width=5, state="readonly"
+        )
+        self.zoom_dropdown.pack(pady=2)
+
+        get_height_btn = tk.Button(self.controls_frame, text="Get height", font=("Arial", 12),
+                                   command=self.on_get_height)
+        get_height_btn.pack(pady=5)
+
+        controls_info_label = tk.Label(
+            self.controls_frame,
             text="ℹ Left click: select rectangle | Scroll: zoom | Right click: pan",
             font=("Arial", 10),
             anchor="center",
             justify="center"
         )
-        controls_label.pack(side=tk.BOTTOM, anchor="center", padx=10, pady=5)
+        controls_info_label.pack(pady=2)
 
-        self.coords_label = tk.Label(root, text="Selected Area: (N/A)", font=("Arial", 12))
-        self.coords_label.pack(pady=10)
-
+        # --- Load map ---
         self.load_and_plot_map()
 
-        # Zoom level variable
-        self.zoom_level = tk.IntVar(value=9)
-
-        # Dropdown menu for zoom levels
-        zoom_label = tk.Label(root, text="Level of detail:", font=("Arial", 12))
-        zoom_label.pack(pady=5)
-
-        self.zoom_dropdown = ttk.Combobox(root, textvariable=self.zoom_level, values=list(range(8, 15)), width=5,
-                                          state="readonly")
-        self.zoom_dropdown.pack(pady=5)
-
-        # Get Height button
-        get_height_btn = tk.Button(root, text="Get height", font=("Arial", 12), command=self.on_get_height)
-        get_height_btn.pack(pady=10)
-
+        # --- Connect events ---
         self.canvas_widget.mpl_connect("button_press_event", self.on_button_press)
         self.canvas_widget.mpl_connect("motion_notify_event", self.on_mouse_drag)
         self.canvas_widget.mpl_connect("button_release_event", self.on_button_release)
         self.canvas_widget.mpl_connect("scroll_event", self.on_scroll)
 
-        # In your __init__ method, add these connections:
-        self.canvas_widget.mpl_connect("scroll_event", self.on_scroll)
         self.canvas_widget.mpl_connect("button_press_event", self.on_button_press_pan)
         self.canvas_widget.mpl_connect("motion_notify_event", self.on_mouse_drag_pan)
         self.canvas_widget.mpl_connect("button_release_event", self.on_button_release_pan)
@@ -424,7 +429,8 @@ class MapSelectorApp:
     def load_and_plot_map(self):
         try:
             print("Attempting to load 'naturalearth.countries.50m'...")
-            self.world_gdf = gpd.read_file(r".\worldMap\ne_50m_admin_0_countries.zip")
+            base_dir = os.path.dirname(__file__)
+            self.world_gdf = gpd.read_file(os.path.join(base_dir, "worldMap", "ne_50m_admin_0_countries.zip"))
             print("Successfully loaded local world map. (downloaded from: https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/50m/cultural/ne_50m_admin_0_countries.zip")
         except ValueError:
             print("'naturalearth.countries.50m' not found. Falling back to 'naturalearth.land'.")
