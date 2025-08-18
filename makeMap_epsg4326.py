@@ -724,7 +724,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     # Parameters are now in meters for consistency with projected CRS
     label_step_m = 2500  # candidate labels every 2500 meters (2.5km)
     max_distance_m = 2500  # minimum distance between river labels
-    segment_length_m = 500  # for label rotation calculation
+    segment_length_m = 1500  # for label rotation calculation
 
     if rivers_gdf is not None and not rivers_gdf.empty:
         projected_rivers_gdf = rivers_gdf.to_crs(epsg=32631)
