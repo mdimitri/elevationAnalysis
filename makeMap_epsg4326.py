@@ -233,7 +233,7 @@ def get_structures_from_osm(lat1, lat2, lon1, lon2):
 
 def get_roads_from_osm(lat1, lat2, lon1, lon2):
     # query = f'[out:json];way["highway"]({lat1},{lon1},{lat2},{lon2});out geom;'
-    query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|unclassified"]({lat1},{lon1},{lat2},{lon2});out geom;'
+    query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|unclassified|service"]({lat1},{lon1},{lat2},{lon2});out geom;'
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), lambda elements: gpd.GeoDataFrame([
         {"highway": el["tags"].get("highway"),
          "geometry": LineString([(pt["lon"], pt["lat"]) for pt in el["geometry"]])}
@@ -552,85 +552,85 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
                   cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
 
-    # print("Plotting contours...")
-    # map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
-    # x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
-    # X, Y = np.meshgrid(x, y)
-    # min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
-    # min_val = 0
-    # max_val = max_val // 100 * 100 + 100
-    #
-    # levels_mini = np.arange(min_val, max_val, 20)
-    # levels_thin = np.arange(min_val, max_val, 100)
-    #
-    # print("Drawing mini contours with very thin lines...");
-    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.5, linewidths=0.03)
-    # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
-    # print("Drawing thin contours with thin lines...");
-    # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
-    # print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
-    #
-    # max_distance_km = 2.0  # spacing between labels
-    # for level_idx, (level, collection) in enumerate(
-    #         tqdm(zip(contours_thin.levels, contours_thin.collections),
-    #              total=len(contours_thin.levels),
-    #              desc="Drawing contour labels",
-    #              position=0,  # Explicitly set position for the outer bar
-    #              leave=True,
-    #              dynamic_ncols=False)):
-    #
-    #     collection.set_rasterized(True)
-    #     placed_labels = []
-    #
-    #     # Count all segments for this level
-    #     total_segments = sum(
-    #         max(len(path.vertices) - 1, 0) for path in collection.get_paths()
-    #     )
-    #     seg_bar = tqdm(total=total_segments,
-    #                    desc=f"{level}m",
-    #                    position=1,  # Place the inner bar on the next line
-    #                    leave=False,
-    #                    dynamic_ncols=False,
-    #                    mininterval=0.1)
-    #
-    #     for path_idx, path in enumerate(collection.get_paths()):
-    #         vertices = path.vertices
-    #         if len(vertices) < 2:
-    #             continue
-    #
-    #         deltas = [
-    #             haversine_distance(lat1, lon1, lat2, lon2)
-    #             for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
-    #         ]
-    #
-    #         cum_dist = 0.0
-    #         for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
-    #             cum_dist += seg_len
-    #             seg_bar.update(1)
-    #
-    #             if cum_dist >= max_distance_km:
-    #                 if cum_dist <= max_distance_km * 1.5:
-    #                     x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
-    #                     if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
-    #                            for py, px in placed_labels):
-    #                         angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-    #                         if angle > 90:
-    #                             angle -= 180
-    #                         elif angle < -90:
-    #                             angle += 180
-    #                         ax.text(
-    #                             x_mid, y_mid, f"{level:.0f}",
-    #                             fontsize=contoursFontSize,
-    #                             color="0.65", alpha=0.6,
-    #                             ha="center", va="center",
-    #                             rotation=angle, rotation_mode="anchor",
-    #                             zorder=1, rasterized=True,
-    #                         )
-    #                         placed_labels.append((y_mid, x_mid))
-    #                 cum_dist = 0.0
-    #
-    #     seg_bar.close()
-    # print("Finished labeling contours.")
+    print("Plotting contours...")
+    map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
+    x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
+    X, Y = np.meshgrid(x, y)
+    min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
+    min_val = 0
+    max_val = max_val // 100 * 100 + 100
+
+    levels_mini = np.arange(min_val, max_val, 20)
+    levels_thin = np.arange(min_val, max_val, 100)
+
+    print("Drawing mini contours with very thin lines...");
+    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.5, linewidths=0.03)
+    print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
+    print("Drawing thin contours with thin lines...");
+    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
+    print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
+
+    max_distance_km = 2.0  # spacing between labels
+    for level_idx, (level, collection) in enumerate(
+            tqdm(zip(contours_thin.levels, contours_thin.collections),
+                 total=len(contours_thin.levels),
+                 desc="Drawing contour labels",
+                 position=0,  # Explicitly set position for the outer bar
+                 leave=True,
+                 dynamic_ncols=False)):
+
+        collection.set_rasterized(True)
+        placed_labels = []
+
+        # Count all segments for this level
+        total_segments = sum(
+            max(len(path.vertices) - 1, 0) for path in collection.get_paths()
+        )
+        seg_bar = tqdm(total=total_segments,
+                       desc=f"{level}m",
+                       position=1,  # Place the inner bar on the next line
+                       leave=False,
+                       dynamic_ncols=False,
+                       mininterval=0.1)
+
+        for path_idx, path in enumerate(collection.get_paths()):
+            vertices = path.vertices
+            if len(vertices) < 2:
+                continue
+
+            deltas = [
+                haversine_distance(lat1, lon1, lat2, lon2)
+                for (lon1, lat1), (lon2, lat2) in zip(vertices[:-1], vertices[1:])
+            ]
+
+            cum_dist = 0.0
+            for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
+                cum_dist += seg_len
+                seg_bar.update(1)
+
+                if cum_dist >= max_distance_km:
+                    if cum_dist <= max_distance_km * 1.5:
+                        x_mid, y_mid = (x1 + x2) / 2, (y1 + y2) / 2
+                        if all(haversine_distance(y_mid, x_mid, py, px) >= max_distance_km
+                               for py, px in placed_labels):
+                            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+                            if angle > 90:
+                                angle -= 180
+                            elif angle < -90:
+                                angle += 180
+                            ax.text(
+                                x_mid, y_mid, f"{level:.0f}",
+                                fontsize=contoursFontSize,
+                                color="0.65", alpha=0.6,
+                                ha="center", va="center",
+                                rotation=angle, rotation_mode="anchor",
+                                zorder=1, rasterized=True,
+                            )
+                            placed_labels.append((y_mid, x_mid))
+                    cum_dist = 0.0
+
+        seg_bar.close()
+    print("Finished labeling contours.")
 
     print("Plotting structures...")
     if structures_gdf is not None and not structures_gdf.empty:
@@ -638,7 +638,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         ax.collections[-1].set_rasterized(True)
 
     print("Plotting water bodies...")
-
     if water_bodies_gdf is not None and not water_bodies_gdf.empty:
         water_bodies_gdf.plot(ax=ax, facecolor=(0.7, 0.88, 0.96),
                               edgecolor=(0.21, 0.55, 0.77),
@@ -658,16 +657,20 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
         # Filter for label-worthy water bodies, sort by size (descending)
         water_names_gdf = water_bodies_gdf[water_bodies_gdf["tags"].apply(has_valid_water_name)]
-        water_names_gdf = water_names_gdf.assign(area=water_names_gdf.geometry.area).sort_values("area", ascending=False)
+        water_names_gdf = water_names_gdf.assign(area=water_names_gdf.geometry.area).sort_values("area",
+                                                                                                 ascending=False)
 
         min_water_label_distance_km = 2.0  # tweak for density control
-        placed_coords = []
-        coords = []
-        texts = []
+        placed_coords_deg = []  # Store placed coordinates in degrees (lat, lon)
+
+        # Lists to store data for cKDTree and text plotting
+        texts_for_plot = []
+        coords_deg_for_tree = []  # Store coordinates in degrees (lat, lon) for the tree
 
         for _, row in water_names_gdf.iterrows():
             geom = row.geometry.representative_point()
-            x, y = geom.x, geom.y
+            x, y = geom.x, geom.y  # x is longitude, y is latitude
+
             if not (west <= x <= east and south <= y <= north):
                 continue
 
@@ -676,24 +679,46 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             if len(words) == 2:
                 name = "\n".join(words)
 
-            texts.append((x, y, name))
-            coords.append((y, x))  # store lat, lon
+            texts_for_plot.append((x, y, name))
+            coords_deg_for_tree.append((y, x))  # Store lat, lon in degrees
 
-        if texts:
-            coords = np.array(coords)
-            tree = cKDTree(coords)
+        if texts_for_plot:
+            coords_deg_for_tree_np = np.array(coords_deg_for_tree)
 
-            for (x, y, label), (lat, lon) in zip(texts, coords):
-                idxs = tree.query_ball_point([lat, lon], min_water_label_distance_km)
-                if all(tuple(coords[i]) not in placed_coords for i in idxs):
-                    ax.text(x, y, label,
+            # Convert coordinates to radians for the Haversine KDTree
+            coords_rad_for_tree = np.radians(coords_deg_for_tree_np)
+            tree = cKDTree(coords_rad_for_tree)
+
+            # Earth's radius in kilometers
+            earth_radius_km = 6371.0
+            # Convert desired distance in km to radians
+            radius_rad = min_water_label_distance_km / earth_radius_km
+
+            for (x_lon, y_lat, label) in texts_for_plot:
+                # Get the original lat, lon in degrees for this point
+                current_lat_deg, current_lon_deg = y_lat, x_lon
+
+                # Convert the current point to radians for querying the KDTree
+                current_lat_rad, current_lon_rad = np.radians([current_lat_deg, current_lon_deg])
+
+                # Query the tree for points within the specified radius (in radians)
+                # This will return indices of points within the Haversine distance
+                idxs = tree.query_ball_point([current_lat_rad, current_lon_rad], r=radius_rad)
+
+                # Check if any of the nearby points (including itself) have already been placed
+                # We compare the original degree coordinates for this check
+                if all(tuple(coords_deg_for_tree_np[i]) not in placed_coords_deg for i in idxs):
+                    ax.text(x_lon, y_lat, label,
                             fontsize=waterBodiesFontSize,
                             fontfamily="serif", style="italic",
                             color=(0, 0.3, 0.6), alpha=0.8,
                             ha="center", va="center",
-                            path_effects=[patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.2, 0.5, 0.8), capstyle="round")],
+                            path_effects=[
+                                patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.2, 0.5, 0.8),
+                                                       capstyle="round")],
                             rasterized=True, zorder=4)
-                    placed_coords.append((lat, lon))
+                    # Add the degree coordinates of the placed label to the list
+                    placed_coords_deg.append((current_lat_deg, current_lon_deg))
 
     print("Plotting rivers and their labels...")
     # Parameters are now in meters for consistency with projected CRS
@@ -802,8 +827,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         max(south, min(latlon_point.geometry.y.iloc[0], north)),
                         name,
                         fontsize=riverLabelFontSize,
-                        color=(0.21, 0.55, 0.77),
-                        path_effects=[patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.41, 0.75, 0.97), capstyle="round")],
+                        color=(0.11, 0.45, 0.67),
+                        path_effects=[patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.21, 0.55, 0.77), capstyle="round")],
                         alpha=0.8,
                         zorder=4,
                         ha='center',
@@ -846,26 +871,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             "construction": {"width": 0.05+0.02, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
             "proposed":     {"width": 0.05+0.02, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
         }
-        # road_styles = {
-        #     "motorway":    {"width": 0.4,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "trunk":       {"width": 0.3,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "primary":     {"width": 0.3,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "secondary":   {"width": 0.2,   "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "tertiary":    {"width": 0.15,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "residential": {"width": 0.075, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "unclassified":{"width": 0.075, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #     "service":     {"width": 0.05,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
-        #
-        #     "footway":      {"width": 0.05, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": '--'},
-        #     "path":         {"width": 0.04, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 6, "linestyle": ':'},
-        #     "cycleway":     {"width": 0.06, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 6, "linestyle": '-'},
-        #     "bridleway":    {"width": 0.04, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 6, "linestyle": '-.'},
-        #     "steps":        {"width": 0.03, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": ':'},
-        #     "pedestrian":   {"width": 0.1,  "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 5, "linestyle": '-'},
-        #     "track":        {"width": 0.05, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
-        #     "construction": {"width": 0.05, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
-        #     "proposed":     {"width": 0.05, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
-        # }
 
         for road_type in tqdm(roads_gdf["highway"].unique(), desc="Drawing roads", dynamic_ncols=True, leave=False):
             subset = roads_gdf[roads_gdf["highway"] == road_type]
@@ -937,13 +942,13 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                      "style": 'normal', "color": [0.1, 0.1, 0.1]},
             "town": {"settlementMarkerSize": settlementMarkerSize * 0.8,
                      "settlementsFontSize": settlementsFontSize * 0.8, "style": 'normal', "color": [0.1, 0.1, 0.1]},
-            # "village": {"settlementMarkerSize": settlementMarkerSize * 0.4,
-            #             "settlementsFontSize": settlementsFontSize * 0.5, "style": 'normal', "color": [0.1, 0.1, 0.1]},
-            # "suburb": {"settlementMarkerSize": 0,
-            #            "settlementsFontSize": settlementsFontSize * 0.3, "style": 'italic',
-            #            "color": [0.25, 0.25, 0.25]},
-            # "hamlet": {"settlementMarkerSize": 0,
-            #            "settlementsFontSize": settlementsFontSize * 0.3, "style": 'italic', "color": [0.25, 0.25, 0.25]}
+            "village": {"settlementMarkerSize": settlementMarkerSize * 0.4,
+                        "settlementsFontSize": settlementsFontSize * 0.5, "style": 'normal', "color": [0.1, 0.1, 0.1]},
+            "suburb": {"settlementMarkerSize": 0,
+                       "settlementsFontSize": settlementsFontSize * 0.3, "style": 'italic',
+                       "color": [0.25, 0.25, 0.25]},
+            "hamlet": {"settlementMarkerSize": 0,
+                       "settlementsFontSize": settlementsFontSize * 0.3, "style": 'italic', "color": [0.25, 0.25, 0.25]}
         }
 
         settlement_places = places_gdf[places_gdf["type"].isin(settlement_types_map.keys())].copy()
@@ -1121,9 +1126,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
 
-    rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
+    # rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
     # rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
-    # rasterPath = r".\13_23.1_20.3_42.4_40.7\heightmap_z13_lon_20.3_23.1_lat_40.7_42.5.npz"  # NMK zoom 13
+    rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
     # rasterPath = r".\11_16.6_13.3_47.0_45.3\heightmap_z11_lon_13.2_16.7_lat_45.2_47.0.npz" # Slovenia
     # rasterPath = r".\11_23.2_13.3_46.9_40.7\heightmap_z11_lon_13.2_23.2_lat_40.6_47.0.npz" # ex YU
 
@@ -1157,10 +1162,10 @@ def main():
 
     places_gdf = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
     roads_gdf = load_or_fetch("roads", rasterPath, south, north, west, east, get_roads_from_osm)
-    structures_gdf = None #load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
+    structures_gdf = load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
     rivers_gdf =  load_or_fetch("rivers", rasterPath, south, north, west, east, get_rivers_from_osm)
     water_bodies_gdf = load_or_fetch("water_bodies", rasterPath, south, north, west, east, get_water_bodies_osm2geojson)
-    mountain_peaks_gdf = None #load_or_fetch("mountain_peaks", rasterPath, south, north, west, east, get_mountain_peaks_osm2geojson)
+    mountain_peaks_gdf = load_or_fetch("mountain_peaks", rasterPath, south, north, west, east, get_mountain_peaks_osm2geojson)
     railroads_gdf = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
     airports_gdf = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east,
