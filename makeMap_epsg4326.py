@@ -236,8 +236,8 @@ def get_structures_from_osm(lat1, lat2, lon1, lon2):
 
 
 def get_roads_from_osm(lat1, lat2, lon1, lon2):
-    # query = f'[out:json];way["highway"]({lat1},{lon1},{lat2},{lon2});out geom;'
-    query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|residential|unclassified|service"]({lat1},{lon1},{lat2},{lon2});out geom;'
+    query = f'[out:json];way["highway"]({lat1},{lon1},{lat2},{lon2});out geom;'
+    # query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|residential|unclassified|service"]({lat1},{lon1},{lat2},{lon2});out geom;'
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), lambda elements: gpd.GeoDataFrame([
         {"highway": el["tags"].get("highway"),
          "geometry": LineString([(pt["lon"], pt["lat"]) for pt in el["geometry"]])}
@@ -566,11 +566,11 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     # min_val = 0
     # max_val = max_val // 100 * 100 + 100
     #
-    # levels_mini = np.arange(min_val, max_val, 20)
+    # levels_mini = np.arange(min_val, max_val, 10)
     # levels_thin = np.arange(min_val, max_val, 100)
     #
     # print("Drawing mini contours with very thin lines...");
-    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.5, linewidths=0.03)
+    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.4, linewidths=0.02)
     # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
     # print("Drawing thin contours with thin lines...");
     # contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
@@ -727,8 +727,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     # Calculate the scaling factor based on area
                     if area_range > 0:
                         normalized_area = (area - min_area) / area_range
-                        # Scaling factor from 1.0 to 2.0
-                        area_scale_factor = 1.0 + normalized_area
+                        # Scaling factor from 1.0 to 3.0
+                        area_scale_factor = 1.0 + 2*normalized_area
                     else:
                         # If all areas are the same, use a factor of 1.0
                         area_scale_factor = 1.0
@@ -742,7 +742,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             color=(0, 0.3, 0.6), alpha=0.8,
                             ha="center", va="center",
                             path_effects=[
-                                patheffects.withStroke(linewidth=scaled_font_size * 0.1, foreground=(0.2, 0.5, 0.8),
+                                patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.2, 0.5, 0.8),
                                                        capstyle="round")],
                             rasterized=True, zorder=4)
                     # Add the degree coordinates of the placed label to the list
@@ -858,7 +858,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         color=(0.11, 0.45, 0.67),
                         path_effects=[patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.21, 0.55, 0.77), capstyle="round")],
                         alpha=0.8,
-                        zorder=5,
+                        zorder=6,
                         ha='center',
                         va='top',
                         style='italic',
@@ -889,15 +889,15 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             "unclassified":{"width": 0.1, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
             "service":     {"width": 0.1,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
 
-            "footway":      {"width": 0.05+0.02, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": '--'},
-            "path":         {"width": 0.04+0.02, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 6, "linestyle": ':'},
-            "cycleway":     {"width": 0.06+0.02, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 6, "linestyle": '-'},
-            "bridleway":    {"width": 0.04+0.02, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 6, "linestyle": '-.'},
-            "steps":        {"width": 0.03+0.02, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 6, "linestyle": ':'},
-            "pedestrian":   {"width": 0.1,  "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 5, "linestyle": '-'},
-            "track":        {"width": 0.05+0.02, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
-            "construction": {"width": 0.05+0.02, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
-            "proposed":     {"width": 0.05+0.02, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
+            "footway":      {"width": 0.1, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 4, "linestyle": '--'},
+            "path":         {"width": 0.1, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 4, "linestyle": ':'},
+            "cycleway":     {"width": 0.1, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 4, "linestyle": '-'},
+            "bridleway":    {"width": 0.1, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 4, "linestyle": '-.'},
+            "steps":        {"width": 0.07, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 4, "linestyle": ':'},
+            "pedestrian":   {"width": 0.1 ,  "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 4, "linestyle": '-'},
+            "track":        {"width": 0.1, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
+            "construction": {"width": 0.1, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
+            "proposed":     {"width": 0.1, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
         }
 
         for road_type in tqdm(roads_gdf["highway"].unique(), desc="Drawing roads", dynamic_ncols=True, leave=False):
@@ -1205,6 +1205,7 @@ def main():
     rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
     # rasterPath = r".\11_16.6_13.3_47.0_45.3\heightmap_z11_lon_13.2_16.7_lat_45.2_47.0.npz" # Slovenia
     # rasterPath = r".\11_23.2_13.3_46.9_40.7\heightmap_z11_lon_13.2_23.2_lat_40.6_47.0.npz" # ex YU
+    # rasterPath = r".\9_22.1_21.8_41.6_41.2\heightmap_z9_lon_21.1_22.5_lat_41.0_42.0.npz" # tikvesko ezero debug
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
