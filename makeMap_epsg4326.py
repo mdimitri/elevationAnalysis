@@ -526,7 +526,7 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
 
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf,
                               railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
-                              resolutionFactor, resolution, exagerateTerrain):
+                              resolutionFactor, resolution_lat, resolution_lon, exagerateTerrain):
     fig_width, fig_height = resolutionFactor * 10, resolutionFactor * 10
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
 
@@ -541,10 +541,13 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     settlementMarkerSize = .5 * resolutionFactor
     mountainPeaksMarkerSize = .2 * resolutionFactor
 
-    # pre smooth the terrain map to avoid exaggerating noise
-    # smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
-    # map_s_smooth = smoothed(map_s, 3)
-    map_s_smooth = map_s
+    ### pre smooth the terrain map to avoid exaggerating noise
+    # set a kernel width at set spatial size (in latitude degrees)
+    kernelDegrees = 0.00125
+    kernelPixelWidth = int(np.round(kernelDegrees / resolution_lat))
+    smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
+    map_s_smooth = smoothed(map_s, kernelPixelWidth)
+    # map_s_smooth = map_s
 
     if exagerateTerrain:
         print("Terrain exaggeration by hill shading...")
@@ -1203,7 +1206,7 @@ def main():
 
     # rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
     # rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
-    rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
+    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.4.npz"  # NMK zoom 13
     # rasterPath = r".\14_23.0_20.4_42.4_40.7\heightmap_z14_lon_20.4_23.0_lat_40.7_42.4.npz" # NMK zoom 14
     # rasterPath = r".\11_16.6_13.3_47.0_45.3\heightmap_z11_lon_13.2_16.7_lat_45.2_47.0.npz" # Slovenia
     # rasterPath = r".\11_23.2_13.3_46.9_40.7\heightmap_z11_lon_13.2_23.2_lat_40.6_47.0.npz" # ex YU
@@ -1215,7 +1218,8 @@ def main():
     # resolutionFactor, dpi = 4, int(800)
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
-    resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
+    # resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
+    resolutionFactor, dpi = 1.75, int(1600)  # good middle ground
     ### lowres settings
     # resolutionFactor, dpi = 2, int(640)
 
@@ -1228,7 +1232,8 @@ def main():
     north = meta_4326['north']
     west = meta_4326['west']
     east = meta_4326['east']
-    resolution = meta_4326['resolution_lon_deg']
+    resolution_lat = meta_4326['resolution_lat_deg']
+    resolution_lon = meta_4326['resolution_lon_deg']
 
     print("Raster and metadata loaded!")
     subsample = 1
@@ -1255,11 +1260,11 @@ def main():
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
                                         south, west, north,
-                                        east, dpi=dpi, resolutionFactor=resolutionFactor, resolution=resolution,
-                                        exagerateTerrain=exagerateTerrain)
+                                        east, dpi=dpi, resolutionFactor=resolutionFactor, resolution_lat=resolution_lat,
+                                        resolution_lon=resolution_lon, exagerateTerrain=exagerateTerrain)
 
     output_filename = (
-        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution}_ex={exagerateTerrain}'
+        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution_lat}_ex={exagerateTerrain}'
         f'_E={format(east, ".3f").replace(".", ",")}'
         f'_W={format(west, ".3f").replace(".", ",")}'
         f'_N={format(north, ".3f").replace(".", ",")}'
