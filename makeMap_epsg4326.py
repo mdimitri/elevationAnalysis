@@ -541,16 +541,17 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     settlementMarkerSize = .5 * resolutionFactor
     mountainPeaksMarkerSize = .2 * resolutionFactor
 
-    ### pre smooth the terrain map to avoid exaggerating noise
-    # set a kernel width at set spatial size (in latitude degrees)
-    kernelDegrees = 0.00125
-    kernelPixelWidth = int(np.round(kernelDegrees / resolution_lat))
-    smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
-    map_s_smooth = smoothed(map_s, kernelPixelWidth)
-    # map_s_smooth = map_s
+
 
     if exagerateTerrain:
         print("Terrain exaggeration by hill shading...")
+        ### pre smooth the terrain map to avoid exaggerating noise
+        # set a kernel width at set spatial size (in latitude degrees)
+        kernelDegrees = 0.00125
+        kernelPixelWidth = int(np.round(kernelDegrees / resolution_lat))
+        smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
+        map_s_smooth = smoothed(map_s, kernelPixelWidth)
+
         ls = LightSource(azdeg=315, altdeg=45)
         map_s_colored = (255*ls.shade(map_s_smooth, blend_mode='soft', vert_exag=1, fraction=.5, cmap=gamma_cmap, vmin=-np.max(map_s) * 0.05)).astype(np.uint8)
         ax.imshow(map_s_colored, extent=[west, east, south, north], origin='upper', interpolation='bilinear')
