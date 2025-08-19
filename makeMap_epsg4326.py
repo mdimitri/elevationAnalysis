@@ -22,6 +22,7 @@ from scipy.spatial import cKDTree
 from shapely.ops import polygonize, unary_union  # Added for polygonize
 import colorsys
 import matplotlib.patheffects as patheffects
+from matplotlib.colors import LightSource
 
 # projDataDirPath = datadir.get_data_dir()
 # os.environ['PROJ_DATA'] = projDataDirPath
@@ -540,33 +541,28 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     settlementMarkerSize = .5 * resolutionFactor
     mountainPeaksMarkerSize = .2 * resolutionFactor
 
+    # pre smooth the terrain map to avoid exaggerating noise
+    # smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
+    # map_s_smooth = smoothed(map_s, 3)
+    map_s_smooth = map_s
+
     if exagerateTerrain:
-        print("Terrain exaggeration...")
-        # # increase colorization in locally flat regions
-        pixelsPerDegree = map_s.shape[0] / np.abs(south - north)
-        kernel_size = 0.0125 / 2  # in degrees
-        kernel_size = int(kernel_size * pixelsPerDegree)  # in pixels
-        unsharp_mask = lambda img, sigma=1, strength=1.2: np.clip(
-            (((img - img.min()) / (img.max() - img.min())) + strength * (
-                    ((img - img.min()) / (img.max() - img.min())) - gaussian_filter(
-                (img - img.min()) / (img.max() - img.min()), sigma))) * (img.max() - img.min()) + img.min(),
-            img.min(), img.max()
-        )
-        ax.imshow(unsharp_mask(np.copy(map_s), sigma=kernel_size, strength=1.0), extent=[west, east, south, north],
-                  origin='upper', cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
+        print("Terrain exaggeration by hill shading...")
+        ls = LightSource(azdeg=315, altdeg=45)
+        map_s_colored = (255*ls.shade(map_s_smooth, blend_mode='soft', vert_exag=1, fraction=.5, cmap=gamma_cmap, vmin=-np.max(map_s) * 0.05)).astype(np.uint8)
+        ax.imshow(map_s_colored, extent=[west, east, south, north], origin='upper', interpolation='bilinear')
     else:
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
                   cmap=gamma_cmap, interpolation='bilinear', vmin=-np.max(map_s)*0.05)
 
     print("Plotting contours...")
-    map_s_smooth = map_s  # gaussian_filter(map_s, sigma=map_s.shape[0] / 6000)
     x, y = np.linspace(west, east, map_s.shape[1]), np.linspace(north, south, map_s.shape[0])
     X, Y = np.meshgrid(x, y)
     min_val, max_val = np.min(map_s_smooth), np.max(map_s_smooth)
     min_val = 0
     max_val = max_val // 100 * 100 + 100
 
-    levels_mini = np.arange(min_val, max_val, 10)
+    levels_mini = np.arange(min_val, max_val, 20)
     levels_thin = np.arange(min_val, max_val, 100)
 
     print("Drawing mini contours with very thin lines...");
@@ -1208,6 +1204,7 @@ def main():
     # rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
     # rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
     rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
+    # rasterPath = r".\14_23.0_20.4_42.4_40.7\heightmap_z14_lon_20.4_23.0_lat_40.7_42.4.npz" # NMK zoom 14
     # rasterPath = r".\11_16.6_13.3_47.0_45.3\heightmap_z11_lon_13.2_16.7_lat_45.2_47.0.npz" # Slovenia
     # rasterPath = r".\11_23.2_13.3_46.9_40.7\heightmap_z11_lon_13.2_23.2_lat_40.6_47.0.npz" # ex YU
     # rasterPath = r".\9_22.1_21.8_41.6_41.2\heightmap_z9_lon_21.1_22.5_lat_41.0_42.0.npz" # tikvesko ezero debug
@@ -1235,7 +1232,8 @@ def main():
 
     print("Raster and metadata loaded!")
     subsample = 1
-    map_s = map_data[::subsample, ::subsample]
+    from skimage.transform import rescale
+    map_s = rescale(map_data, 1/subsample, anti_aliasing=True)
     map_s[map_s <= -1] = - np.max(map_s) * 1  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
 
     print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
@@ -1248,20 +1246,12 @@ def main():
     mountain_peaks_gdf = load_or_fetch("mountain_peaks", rasterPath, south, north, west, east, get_mountain_peaks_osm2geojson)
     railroads_gdf = load_or_fetch("railroads", rasterPath, south, north, west, east, get_railroads_osm2geojson)
     airports_gdf = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
-    country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east,
-                                           get_country_boundaries_from_osm)
+    country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
-    # # --- ADDED: Ensure 'tags' column consistency after loading ---
-    # if 'tags' in water_bodies_gdf.columns:
-    #     water_bodies_gdf['tags'] = water_bodies_gdf['tags'].apply(
-    #         lambda x: x if isinstance(x, dict) else {}
-    #     )
-    # else:
-    #     water_bodies_gdf['tags'] = [{} for _ in range(len(water_bodies_gdf))]
-    # # --- END ADDITION ---
+
 
     # Apply color exaggeration
-    exagerateTerrain = False
+    exagerateTerrain = True
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
                                         south, west, north,

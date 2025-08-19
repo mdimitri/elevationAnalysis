@@ -333,7 +333,7 @@ class MapSelectorApp:
     def fetchHeight(self, east, west, north, south, zoom):
         print(f"Fetching: East={east}, West={west}, North={north}, South={south}, Zoom={zoom}")
         output_dir = f"{zoom}_{east:.1f}_{west:.1f}_{north:.1f}_{south:.1f}"
-        fetch_and_process_heightmap(west, south, east, north, zoom=zoom, output_dir=output_dir, max_workers=32, parent=self.root)
+        fetch_and_process_heightmap(west, south, east, north, zoom=zoom, output_dir=output_dir, max_workers=16, parent=self.root)
 
     def on_get_height(self):
         if self.rect_patch:
