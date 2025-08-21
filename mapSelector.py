@@ -535,8 +535,8 @@ class MapSelectorApp:
 
     def _download_and_process_low_res_map(self, world_map_dir, pickle_path):
         """Helper function to download, process, and save low-res elevation data."""
-        west, south, east, north = -180, -85, 180, 85
-        zoom_level = 3
+        west, south, east, north = -180, -89.9, 180, 89.9
+        zoom_level = 4
         tile_x_nw, tile_y_nw = latlon_to_tile(north, west, zoom_level)
         tile_x_se, tile_y_se = latlon_to_tile(south, east, zoom_level)
         min_tile_x = min(tile_x_nw, tile_x_se)
