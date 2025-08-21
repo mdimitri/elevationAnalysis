@@ -4,6 +4,9 @@ This project allows you to generate detailed terrain maps with various geographi
 
 <table>
   <tr>
+    <td colspan="2" align="center"><img src="./demo/downloader_gui.png" alt="Map 1" width="400"/></td>
+  </tr>
+  <tr>
     <td><img src="./demo/MK_lowres.jpg" alt="Map 1" width="400"/></td>
     <td><img src="./demo/MK_lowres_detail.jpg" alt="Map 2" width="400"/></td>
   </tr>
