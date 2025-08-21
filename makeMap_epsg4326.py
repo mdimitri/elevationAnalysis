@@ -1203,11 +1203,9 @@ def main():
 
     # rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
     # rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
-    # rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
+    rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
     # rasterPath = r".\14_23.0_20.4_42.4_40.7\heightmap_z14_lon_20.4_23.0_lat_40.7_42.4.npz" # NMK zoom 14
-    # rasterPath = r".\11_16.6_13.3_47.0_45.3\heightmap_z11_lon_13.2_16.7_lat_45.2_47.0.npz" # Slovenia
-    # rasterPath = r".\11_23.2_13.3_46.9_40.7\heightmap_z11_lon_13.2_23.2_lat_40.6_47.0.npz" # ex YU
-    rasterPath = r".\13_3.8_3.7_51.1_51.0\heightmap_z13_lon_3.7_3.8_lat_51.0_51.1.npz" # Ghent
+    # rasterPath = r".\14_-115.6_-116.4_51.4_50.8\heightmap_z14_lon_-116.5_-115.6_lat_50.8_51.4.npz" # Canada
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)

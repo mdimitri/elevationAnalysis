@@ -13,6 +13,40 @@ from tkinter import ttk
 from tkinter import messagebox
 import threading
 import pyperclip
+import pickle
+import matplotlib, pyproj
+from shapely.ops import transform as shapely_transform
+from shapely.geometry import box
+from rasterio.transform import from_bounds
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+
+def reproject_npz_to_epsg4326_arrayInput(elev, extent):
+    # extent = [top_left_lon, bottom_right_lon, bottom_right_lat, top_left_lat]
+    south, north, east, west = extent[2], extent[3], extent[1], extent[0]
+    width, height = elev.shape[1], elev.shape[0]
+    project_to_merc = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform
+    merc_bounds = shapely_transform(project_to_merc, box(west, south, east, north)).bounds
+    src_transform = from_bounds(*merc_bounds, width, height)
+    dst_transform, dst_width, dst_height = calculate_default_transform(
+        "EPSG:3857", "EPSG:4326", width, height, *merc_bounds
+    )
+    dst_array = np.empty((dst_height, dst_width), dtype=elev.dtype)
+    reproject(
+        elev, dst_array,
+        src_transform=src_transform, src_crs="EPSG:3857",
+        dst_transform=dst_transform, dst_crs="EPSG:4326",
+        resampling=Resampling.bilinear
+    )
+
+    new_west, new_north = dst_transform.c, dst_transform.f
+    return dst_array, {
+        'south': new_north + dst_height * dst_transform.e,
+        'north': new_north,
+        'west': new_west,
+        'east': new_west + dst_width * dst_transform.a,
+        'resolution_lon_deg': dst_transform.a,
+        'resolution_lat_deg': -dst_transform.e
+    }
 
 def ask_sure(numtiles: int, tile_size: int) -> bool:
     result = messagebox.askyesno("Are you sure?", "Request to download %d tiles of size %dx%dpx? \n Total size: %.1fMB." % (numtiles, tile_size, tile_size, 0.25*numtiles))
@@ -252,8 +286,6 @@ class MapSelectorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Height map downloader")
-        # self.root.geometry("1200x800")
-        # self.root.minsize(1200, 800)
 
         self.world_gdf = None
         self.rect_patch = None
@@ -431,7 +463,8 @@ class MapSelectorApp:
             print("Attempting to load 'naturalearth.countries.50m'...")
             base_dir = os.path.dirname(__file__)
             self.world_gdf = gpd.read_file(os.path.join(base_dir, "worldMap", "ne_50m_admin_0_countries.zip"))
-            print("Successfully loaded local world map. (downloaded from: https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/50m/cultural/ne_50m_admin_0_countries.zip")
+            print(
+                "Successfully loaded local world map. (downloaded from: https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/50m/cultural/ne_50m_admin_0_countries.zip")
         except ValueError:
             print("'naturalearth.countries.50m' not found. Falling back to 'naturalearth.land'.")
             self.world_gdf = gpd.read_file(geodatasets.get_path('naturalearth.land'))
@@ -443,12 +476,108 @@ class MapSelectorApp:
         self.ax.set_xticks([])
         self.ax.set_yticks([])
 
-        self.world_gdf.plot(ax=self.ax, color='lightgreen', edgecolor='black', linewidth=0.5)
+        # --- load low res terrain data for guidance ---
+        base_dir = os.path.dirname(__file__)
+        world_map_dir = os.path.join(base_dir, "worldMap")
+        os.makedirs(world_map_dir, exist_ok=True)  # Ensure the directory exists
+        pickle_path = os.path.join(world_map_dir, "world_elevation_data.pkl")
+
+        if os.path.exists(pickle_path):
+            print("Loading elevation data from pickle file...")
+            try:
+                with open(pickle_path, 'rb') as f:
+                    data = pickle.load(f)
+                    elevation_data_array = data['elevations']
+                    extent = data['extent']
+                print("Successfully loaded elevation data from pickle.")
+            except Exception as e:
+                print(f"Error loading pickle file: {e}. Re-downloading.")
+                elevation_data_array, extent = self._download_and_process_low_res_map(world_map_dir, pickle_path)
+        else:
+            print("Pickle file not found. Downloading and processing low-res elevation data...")
+            elevation_data_array, extent = self._download_and_process_low_res_map(world_map_dir, pickle_path)
+
+        print('Converting lowres elevation to epsg4326')
+        elevation_data_array, meta_4326 = reproject_npz_to_epsg4326_arrayInput(elevation_data_array, extent)
+        south, north, east, west = extent[2], extent[3], extent[1], extent[0]
+
+        land = np.copy(elevation_data_array); land[land < 0] = 0
+        water = np.copy(elevation_data_array); water[water > 0] = 8000
+
+        terrain_cmap = matplotlib.colormaps['terrain']
+        blues_cmap = matplotlib.colormaps['Blues_r']
+        landRGB  = terrain_cmap(0.2 + np.clip(land / 8000, 0, 1)**.45)
+        waterRGB = blues_cmap((np.clip(water / 6000, -1, 1) + 1)/2)
+        worldRGB = np.where((elevation_data_array > 0)[..., None], landRGB, waterRGB)
+        if elevation_data_array is not None:
+            # Plot the elevation data as a raster image
+            min_elev = np.min(elevation_data_array)
+            max_elev = np.max(elevation_data_array)
+            self.ax.imshow(
+                worldRGB,
+                extent=[west, east, south, north],
+                origin='upper',
+                cmap='terrain',
+                vmin=min_elev,
+                vmax=max_elev,
+                zorder=0
+            )
+            print("Successfully plotted height map background.")
+        # ---low res terrain map plotting end---
+
+        # The existing code to plot the country borders goes on top
+        self.world_gdf.plot(ax=self.ax, color='none', edgecolor='black', linewidth=0.5, alpha=1)
 
         self.ax.set_xlim(-180, 180)
         self.ax.set_ylim(-90, 90)
 
         self.canvas_widget.draw_idle()
+
+    def _download_and_process_low_res_map(self, world_map_dir, pickle_path):
+        """Helper function to download, process, and save low-res elevation data."""
+        west, south, east, north = -180, -85, 180, 85
+        zoom_level = 3
+        tile_x_nw, tile_y_nw = latlon_to_tile(north, west, zoom_level)
+        tile_x_se, tile_y_se = latlon_to_tile(south, east, zoom_level)
+        min_tile_x = min(tile_x_nw, tile_x_se)
+        max_tile_x = max(tile_x_nw, tile_x_se)
+        min_tile_y = min(tile_y_nw, tile_y_se)
+        max_tile_y = max(tile_y_nw, tile_y_se)
+        num_cols = max_tile_x - min_tile_x + 1
+        num_rows = max_tile_y - min_tile_y + 1
+        tile_size = 256
+        elevation_data_array = np.zeros((num_rows * tile_size, num_cols * tile_size), dtype=np.float32)
+        base_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
+
+        for xi, x_tile in enumerate(range(min_tile_x, max_tile_x + 1)):
+            for yi, y_tile in enumerate(range(min_tile_y, max_tile_y + 1)):
+                tile_url = f"{base_url}/{zoom_level}/{x_tile}/{y_tile}.png"
+                try:
+                    response = requests.get(tile_url, stream=True, timeout=5)
+                    response.raise_for_status()
+                    img = Image.open(response.raw).convert("RGB")
+                    arr = np.array(img, dtype=np.float32)
+                    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+                    elevation = (r * 256 + g + b / 256) - 32768
+                    elevation_data_array[
+                        yi * tile_size:(yi + 1) * tile_size, xi * tile_size:(xi + 1) * tile_size] = elevation
+                except Exception as e:
+                    print(f"Could not fetch low-res tile {x_tile},{y_tile}: {e}")
+
+        top_left_lat, top_left_lon = tile_to_latlon(min_tile_x, min_tile_y, zoom_level)
+        bottom_right_lat, bottom_right_lon = tile_to_latlon(max_tile_x + 1, max_tile_y + 1, zoom_level)
+        extent = [top_left_lon, bottom_right_lon, bottom_right_lat, top_left_lat]
+
+        # Save the data and extent to a pickle file
+        data = {'elevations': elevation_data_array, 'extent': extent}
+        try:
+            with open(pickle_path, 'wb') as f:
+                pickle.dump(data, f)
+            print(f"Low-res elevation data saved to {pickle_path}")
+        except Exception as e:
+            print(f"Error saving pickle file: {e}")
+
+        return elevation_data_array, extent
 
     # --- Left click for rectangle ---
     def on_button_press(self, event):
