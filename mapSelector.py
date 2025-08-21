@@ -548,7 +548,6 @@ class MapSelectorApp:
         tile_size = 256
         elevation_data_array = np.zeros((num_rows * tile_size, num_cols * tile_size), dtype=np.float32)
         base_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
-
         for xi, x_tile in enumerate(range(min_tile_x, max_tile_x + 1)):
             for yi, y_tile in enumerate(range(min_tile_y, max_tile_y + 1)):
                 tile_url = f"{base_url}/{zoom_level}/{x_tile}/{y_tile}.png"
