@@ -21,7 +21,6 @@ from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 def reproject_npz_to_epsg4326_arrayInput(elev, extent):
-    # extent = [top_left_lon, bottom_right_lon, bottom_right_lat, top_left_lat]
     south, north, east, west = extent[2], extent[3], extent[1], extent[0]
     width, height = elev.shape[1], elev.shape[0]
     project_to_merc = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform
@@ -480,7 +479,8 @@ class MapSelectorApp:
         base_dir = os.path.dirname(__file__)
         world_map_dir = os.path.join(base_dir, "worldMap")
         os.makedirs(world_map_dir, exist_ok=True)  # Ensure the directory exists
-        pickle_path = os.path.join(world_map_dir, "world_elevation_data.pkl")
+        zoom_level=4
+        pickle_path = os.path.join(world_map_dir, "world_elevation_data_%d.pkl"  % zoom_level)
 
         if os.path.exists(pickle_path):
             print("Loading elevation data from pickle file...")
@@ -492,10 +492,10 @@ class MapSelectorApp:
                 print("Successfully loaded elevation data from pickle.")
             except Exception as e:
                 print(f"Error loading pickle file: {e}. Re-downloading.")
-                elevation_data_array, extent = self._download_and_process_low_res_map(world_map_dir, pickle_path)
+                elevation_data_array, extent = self._download_and_process_low_res_map(world_map_dir, pickle_path, zoom_level=zoom_level)
         else:
             print("Pickle file not found. Downloading and processing low-res elevation data...")
-            elevation_data_array, extent = self._download_and_process_low_res_map(world_map_dir, pickle_path)
+            elevation_data_array, extent = self._download_and_process_low_res_map(world_map_dir, pickle_path, zoom_level=zoom_level)
 
         print('Converting lowres elevation to epsg4326')
         elevation_data_array, meta_4326 = reproject_npz_to_epsg4326_arrayInput(elevation_data_array, extent)
@@ -520,7 +520,8 @@ class MapSelectorApp:
                 cmap='terrain',
                 vmin=min_elev,
                 vmax=max_elev,
-                zorder=0
+                zorder=0,
+                interpolation = 'nearest'
             )
             print("Successfully plotted height map background.")
         # ---low res terrain map plotting end---
@@ -533,10 +534,10 @@ class MapSelectorApp:
 
         self.canvas_widget.draw_idle()
 
-    def _download_and_process_low_res_map(self, world_map_dir, pickle_path):
+    def _download_and_process_low_res_map(self, world_map_dir, pickle_path, zoom_level=3):
         """Helper function to download, process, and save low-res elevation data."""
-        west, south, east, north = -180, -89.9, 180, 89.9
-        zoom_level = 4
+        west, south, east, north = -180, -85, 179.99, 85
+        # zoom_level = 3
         tile_x_nw, tile_y_nw = latlon_to_tile(north, west, zoom_level)
         tile_x_se, tile_y_se = latlon_to_tile(south, east, zoom_level)
         min_tile_x = min(tile_x_nw, tile_x_se)
@@ -547,21 +548,27 @@ class MapSelectorApp:
         num_rows = max_tile_y - min_tile_y + 1
         tile_size = 256
         elevation_data_array = np.zeros((num_rows * tile_size, num_cols * tile_size), dtype=np.float32)
+        print('Downloading tiles...')
         base_url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
-        for xi, x_tile in enumerate(range(min_tile_x, max_tile_x + 1)):
-            for yi, y_tile in enumerate(range(min_tile_y, max_tile_y + 1)):
-                tile_url = f"{base_url}/{zoom_level}/{x_tile}/{y_tile}.png"
-                try:
-                    response = requests.get(tile_url, stream=True, timeout=5)
-                    response.raise_for_status()
-                    img = Image.open(response.raw).convert("RGB")
-                    arr = np.array(img, dtype=np.float32)
-                    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
-                    elevation = (r * 256 + g + b / 256) - 32768
-                    elevation_data_array[
-                        yi * tile_size:(yi + 1) * tile_size, xi * tile_size:(xi + 1) * tile_size] = elevation
-                except Exception as e:
-                    print(f"Could not fetch low-res tile {x_tile},{y_tile}: {e}")
+        tile_pairs = [(xi, yi, x_tile, y_tile)
+                      for xi, x_tile in enumerate(range(min_tile_x, max_tile_x + 1))
+                      for yi, y_tile in enumerate(range(min_tile_y, max_tile_y + 1))]
+        for xi, yi, x_tile, y_tile in tqdm(tile_pairs, total=len(tile_pairs), desc="Tiles"):
+            tile_url = f"{base_url}/{zoom_level}/{x_tile}/{y_tile}.png"
+            try:
+                response = requests.get(tile_url, stream=True, timeout=5)
+                response.raise_for_status()
+                img = Image.open(response.raw).convert("RGB")
+                arr = np.array(img, dtype=np.float32)
+                r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+                elevation = (r * 256 + g + b / 256) - 32768
+                # print(f"✓", end="", flush=True)
+                elevation_data_array[
+                    yi * tile_size:(yi + 1) * tile_size, xi * tile_size:(xi + 1) * tile_size] = elevation
+            except Exception as e:
+                pass
+                # print(f"x", end="", flush=True)
+                # print(f"Could not fetch low-res tile {x_tile},{y_tile}: {e}")
 
         top_left_lat, top_left_lon = tile_to_latlon(min_tile_x, min_tile_y, zoom_level)
         bottom_right_lat, bottom_right_lon = tile_to_latlon(max_tile_x + 1, max_tile_y + 1, zoom_level)

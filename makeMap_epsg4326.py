@@ -1,13 +1,14 @@
-import argparse, os, sys, numpy as np, math, matplotlib.pyplot as plt, re
+import argparse, os, sys, numpy as np, math, matplotlib.pyplot as plt, re, zipfile
 from scipy.ndimage import gaussian_filter
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point, LineString, Polygon, MultiPolygon
+from shapely.geometry import Point, LineString, Polygon, MultiPolygon, MultiLineString
 import requests, pickle
 import osm2geojson
 from matplotlib.colors import LinearSegmentedColormap
 from tqdm import tqdm
 import time
+from skimage.transform import rescale
 from PIL import Image
 import rasterio
 from rasterio.transform import from_bounds
@@ -19,7 +20,7 @@ from shapely.ops import transform as shapely_transform
 from skimage import exposure
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.spatial import cKDTree
-from shapely.ops import polygonize, unary_union  # Added for polygonize
+from shapely.ops import polygonize, unary_union, linemerge  # Added for polygonize
 import colorsys
 import matplotlib.patheffects as patheffects
 from matplotlib.colors import LightSource
@@ -60,7 +61,7 @@ gamma = 0.45
 x = np.linspace(0.0, 1, 5000)
 colors = cmap(x ** gamma)
 gamma_cmap = LinearSegmentedColormap.from_list('gamma_terrain', colors, N=5000)
-
+blues_cmap = LinearSegmentedColormap.from_list('Blues_r', colors, N=5000) # for the underwater regions
 
 def sanitize_filename(filename):
     """
@@ -371,7 +372,6 @@ def get_rivers_from_osm(lat1, lat2, lon1, lon2):
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "rivers")
 
 
-
 def get_water_bodies_osm2geojson(lat1, lat2, lon1, lon2):
     query = (
         f'[out:json][timeout:180];'
@@ -385,11 +385,102 @@ def get_water_bodies_osm2geojson(lat1, lat2, lon1, lon2):
         f'(.a;>;rel.a;>;);'
         f'out meta;'
     )
+    # def parse_elements(elements):
+    #     geojson = osm2geojson.json2geojson({"elements": elements})
+    #     return gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
     def parse_elements(elements):
         geojson = osm2geojson.json2geojson({"elements": elements})
-        return gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
+        # Directly pass the GeoDataFrame to fix_interrupted_lakes
+        initial_gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
+        fixed_gdf = fix_interrupted_lakes(initial_gdf, tolerance_meters=5.0) # You can adjust this tolerance
+        return fixed_gdf
 
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), parse_elements, "water bodies")
+
+def fix_interrupted_lakes(gdf: gpd.GeoDataFrame, tolerance_meters: float = 5.0) -> gpd.GeoDataFrame:
+    """
+    Attempts to connect interrupted lake segments within a GeoDataFrame
+    by buffering, dissolving, and re-polygonizing.
+
+    Args:
+        gdf (gpd.GeoDataFrame): A GeoDataFrame containing water body geometries,
+                                typically LineStrings or MultiLineStrings.
+                                Expected CRS is EPSG:4326 (WGS84).
+        tolerance_meters (float): The buffer distance in meters. Segments
+                                  within this distance will be connected.
+                                  Adjust this value based on your data and scale.
+
+    Returns:
+        gpd.GeoDataFrame: A new GeoDataFrame with potentially connected and
+                          polygonized water bodies.
+    """
+    if gdf.empty:
+        print("Input GeoDataFrame is empty. Nothing to fix.")
+        return gdf
+
+    print(f"Attempting to fix interrupted lakes with tolerance: {tolerance_meters} meters...")
+
+    # Step 1: Filter for LineString geometries, as these are the ones likely to be interrupted.
+    # Polygons are already closed.
+    lines_gdf = gdf[gdf.geometry.type.isin(['LineString', 'MultiLineString'])]
+    other_geometries_gdf = gdf[~gdf.geometry.type.isin(['LineString', 'MultiLineString'])]
+
+    if lines_gdf.empty:
+        print("No LineString geometries found for processing. Returning original GeoDataFrame.")
+        return gdf
+
+    # Step 2: Project to a local CRS (e.g., UTM) for accurate buffering in meters
+    # Find a suitable UTM zone based on the centroid of the data
+    try:
+        # Calculate centroid of the line geometries
+        centroid = lines_gdf.geometry.unary_union.centroid
+        # Use pyproj to find the UTM zone for the centroid
+        utm_crs_code = pyproj.CRS(proj="utm", zone=int((centroid.x + 180) / 6) + 1, south=centroid.y < 0).to_epsg()
+        print(f"Projecting to EPSG:{utm_crs_code} for buffering.")
+        projected_lines_gdf = lines_gdf.to_crs(epsg=utm_crs_code)
+    except Exception as e:
+        print(f"Could not determine UTM CRS or project data: {e}. Using original CRS for buffering (results in degrees).")
+        # Fallback if projection fails, buffer will be in degrees, which is less precise
+        projected_lines_gdf = lines_gdf.copy()
+        tolerance_meters = tolerance_meters / 111139.0 # Approximate degrees per meter at equator
+
+    # Step 3: Buffer the line segments
+    # The buffer creates polygons around each line segment.
+    buffered_geometries = projected_lines_gdf.geometry.buffer(tolerance_meters)
+
+    # Step 4: Dissolve the buffered geometries
+    # This merges overlapping or touching buffers into single polygons.
+    # This is where disconnected segments within the tolerance connect.
+    dissolved_geometries = buffered_geometries.unary_union
+
+    # Step 5: Convert dissolved result back to GeoDataFrame
+    # Unary_union can return a single Polygon or MultiPolygon.
+    if isinstance(dissolved_geometries, Polygon):
+        fixed_features = [Polygon(dissolved_geometries.exterior)]
+    elif isinstance(dissolved_geometries, MultiPolygon):
+        fixed_features = [Polygon(poly.exterior) for poly in dissolved_geometries.geoms]
+    else:
+        # Handle cases where it might return other geometry types if no polygons are formed
+        print("Dissolution did not result in Polygons/MultiPolygons. Returning original lines.")
+        return gdf
+
+    # Create a new GeoDataFrame from the fixed polygons
+    fixed_gdf = gpd.GeoDataFrame(geometry=fixed_features, crs=projected_lines_gdf.crs)
+
+    # Step 6: Reproject back to original CRS (EPSG:4326)
+    fixed_gdf = fixed_gdf.to_crs(epsg=4326)
+
+    # Step 7: Optionally, add back original polygon geometries that weren't processed as lines
+    # This step ensures you retain any existing, complete lake polygons.
+    if not other_geometries_gdf.empty:
+        # Ensure 'other_geometries_gdf' is also in EPSG:4326 for concatenation
+        other_geometries_gdf = other_geometries_gdf.to_crs(epsg=4326)
+        combined_gdf = gpd.GeoDataFrame(pd.concat([fixed_gdf, other_geometries_gdf], ignore_index=True), crs="EPSG:4326")
+    else:
+        combined_gdf = fixed_gdf
+
+    print(f"Finished processing. Number of features before: {len(gdf)}, after: {len(combined_gdf)}")
+    return combined_gdf
 
 
 def get_railroads_osm2geojson(lat1, lat2, lon1, lon2):
@@ -523,7 +614,6 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
         print(f"Fetched and saved {len(data_gdf)} records to {filename}")
         return data_gdf
 
-
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf,
                               railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
                               resolutionFactor, resolution, exagerateTerrain):
@@ -546,10 +636,15 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     # map_s_smooth = smoothed(map_s, 3)
     map_s_smooth = map_s
 
+    heightLimit = 2800 # minimum sea level, maximum ground level
+    seaBottom = -heightLimit*0.05
+    map_s_smooth[map_s_smooth <= 0] = seaBottom
+
     if exagerateTerrain:
         print("Terrain exaggeration by hill shading...")
         ls = LightSource(azdeg=315, altdeg=45)
-        map_s_colored = (255*ls.shade(map_s_smooth, blend_mode='soft', vert_exag=1, fraction=.5, cmap=gamma_cmap, vmin=-np.max(map_s) * 0.05)).astype(np.uint8)
+        map_s_colored = (255*ls.shade(map_s_smooth, blend_mode='soft', vert_exag=1, fraction=.5, cmap=gamma_cmap,
+                                      vmin=seaBottom, vmax=heightLimit)).astype(np.uint8)
         ax.imshow(map_s_colored, extent=[west, east, south, north], origin='upper', interpolation='bilinear')
     else:
         ax.imshow(map_s, extent=[west, east, south, north], origin='upper',
@@ -565,9 +660,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     levels_mini = np.arange(min_val, max_val, 20)
     levels_thin = np.arange(min_val, max_val, 100)
 
-    print("Drawing mini contours with very thin lines...");
-    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.4, linewidths=0.02)
-    print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
+    # print("Drawing mini contours with very thin lines...");
+    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.4, linewidths=0.02)
+    # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
     print("Drawing thin contours with thin lines...");
     contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
     print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
@@ -588,12 +683,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         total_segments = sum(
             max(len(path.vertices) - 1, 0) for path in collection.get_paths()
         )
-        seg_bar = tqdm(total=total_segments,
-                       desc=f"{level}m",
-                       position=1,  # Place the inner bar on the next line
-                       leave=False,
-                       dynamic_ncols=False,
-                       mininterval=0.1)
 
         for path_idx, path in enumerate(collection.get_paths()):
             vertices = path.vertices
@@ -607,8 +696,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
             cum_dist = 0.0
             for (x1, y1), (x2, y2), seg_len in zip(vertices[:-1], vertices[1:], deltas):
+            # for ind, ((x1, y1), (x2, y2), seg_len) in enumerate(zip(vertices[:-1], vertices[1:], deltas)):
                 cum_dist += seg_len
-                seg_bar.update(1)
 
                 if cum_dist >= max_distance_km:
                     if cum_dist <= max_distance_km * 1.5:
@@ -631,7 +720,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             placed_labels.append((y_mid, x_mid))
                     cum_dist = 0.0
 
-        seg_bar.close()
     print("Finished labeling contours.")
 
     print("Plotting structures...")
@@ -990,27 +1078,48 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             settlement_places = settlement_places.sort_values(by='type_order', ascending=True)
 
             candidate_labels = []
-            for _, row in tqdm(settlement_places.iterrows(), total=len(settlement_places), desc="Filtering labels on proximity", dynamic_ncols=True, leave=False):
+            for _, row in tqdm(settlement_places.iterrows(), total=len(settlement_places),
+                               desc="Filtering labels on proximity", dynamic_ncols=True, leave=False):
                 x, y = row.geometry.x, row.geometry.y
 
                 # Use cKDTree for efficient proximity checking
-                if placed_labels_coords.size == 0 or haversine_vectorized(y, x, placed_labels_coords[:, 0], placed_labels_coords[:, 1]).min() >= min_label_distance_km:
+                if placed_labels_coords.size == 0 or haversine_vectorized(y, x, placed_labels_coords[:, 0],
+                                                                          placed_labels_coords[
+                                                                              :, 1]).min() >= min_label_distance_km:
                     candidate_labels.append(row)
                     placed_labels_coords = np.vstack([placed_labels_coords, [y, x]])
 
-            # Plot markers and text for filtered labels
-            for row in tqdm(candidate_labels, desc="Plotting labels", dynamic_ncols=True, leave=False):
+            # Prepare data for vectorized scatter
+            marker_x_coords = []
+            marker_y_coords = []
+            marker_sizes_list = []
+
+            # Iterate through candidate_labels once to collect scatter data
+            for row in candidate_labels:
                 place_type = row['type']
                 scales = settlement_types_map[place_type]
                 marker_size = scales["settlementMarkerSize"] ** 2
+                x, y = row.geometry.x, row.geometry.y
+
+                if marker_size > 0:
+                    marker_x_coords.append(x)
+                    marker_y_coords.append(y)
+                    marker_sizes_list.append(marker_size)
+
+            # Perform vectorized scatter plot if there are markers to plot
+            if marker_x_coords:  # Check if the list is not empty
+                ax.scatter(marker_x_coords, marker_y_coords, s=marker_sizes_list,
+                           color=(0.1, 0.1, 0.1), zorder=6, linewidths=0)
+
+            # Plot text for filtered labels (original loop, now without scatter call)
+            for row in tqdm(candidate_labels, desc="Plotting labels", dynamic_ncols=True, leave=False):
+                place_type = row['type']
+                scales = settlement_types_map[place_type]
                 label_size = scales["settlementsFontSize"]
                 text_style = scales['style']
                 color = scales['color']
 
                 x, y = row.geometry.x, row.geometry.y
-
-                if marker_size > 0:
-                    ax.scatter(x, y, s=marker_size, color=(0.1, 0.1, 0.1), zorder=6, linewidths=0)
 
                 ax.text(
                     x, y, row["name"],
@@ -1020,7 +1129,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     rasterized=True,
                     style=text_style,
                     color=color,
-                    path_effects=[patheffects.withStroke(linewidth=label_size*0.05, foreground=(0.9, 0.9, 0.9), capstyle="round")],
+                    path_effects=[patheffects.withStroke(linewidth=label_size * 0.05, foreground=(0.9, 0.9, 0.9),
+                                                         capstyle="round")],
                     zorder=8
                 )
 
@@ -1201,11 +1311,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
 
-    # rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
-    # rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
-    rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
-    # rasterPath = r".\14_23.0_20.4_42.4_40.7\heightmap_z14_lon_20.4_23.0_lat_40.7_42.4.npz" # NMK zoom 14
-    # rasterPath = r".\14_-115.6_-116.4_51.4_50.8\heightmap_z14_lon_-116.5_-115.6_lat_50.8_51.4.npz" # Canada
+    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.5.npz"  # NMK zoom 11
+
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
@@ -1213,7 +1320,9 @@ def main():
     # resolutionFactor, dpi = 4, int(800)
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
-    resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
+    # resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
+    resolutionFactor, dpi = 1.5, int(1500)  # good middle ground
+    # resolutionFactor, dpi = 2.0, int(500)  # debug
 
     print("Starting map generation process...")
     # mapzen tiles usually come in as Web Mercator, projcet to lat-lon rectangular projection
@@ -1229,9 +1338,11 @@ def main():
 
     # subsample if working with lots of tiles or large regions
     subsample = 1
-    from skimage.transform import rescale
-    map_s = rescale(map_data, 1/subsample, anti_aliasing=True)
-    map_s[map_s <= -1] = - np.max(map_s) * 1  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
+    if subsample != 1:
+        map_s = rescale(map_data, 1/subsample, anti_aliasing=True)
+    else:
+        map_s = map_data
+    # map_s[map_s <= -1] = - np.max(map_s) * 1  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
 
     # fetch the overlays from OSM, use = None if a specific class is not needed
     places_gdf = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
