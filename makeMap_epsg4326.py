@@ -526,7 +526,7 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
 
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf,
                               railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
-                              resolutionFactor, resolution_lat, resolution_lon, exagerateTerrain):
+                              resolutionFactor, resolution, exagerateTerrain):
     fig_width, fig_height = resolutionFactor * 10, resolutionFactor * 10
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
 
@@ -541,17 +541,13 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     settlementMarkerSize = .5 * resolutionFactor
     mountainPeaksMarkerSize = .2 * resolutionFactor
 
-
+    # pre smooth the terrain map to avoid exaggerating noise
+    # smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
+    # map_s_smooth = smoothed(map_s, 3)
+    map_s_smooth = map_s
 
     if exagerateTerrain:
         print("Terrain exaggeration by hill shading...")
-        ### pre smooth the terrain map to avoid exaggerating noise
-        # set a kernel width at set spatial size (in latitude degrees)
-        kernelDegrees = 0.00125
-        kernelPixelWidth = int(np.round(kernelDegrees / resolution_lat))
-        smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
-        map_s_smooth = smoothed(map_s, kernelPixelWidth)
-
         ls = LightSource(azdeg=315, altdeg=45)
         map_s_colored = (255*ls.shade(map_s_smooth, blend_mode='soft', vert_exag=1, fraction=.5, cmap=gamma_cmap, vmin=-np.max(map_s) * 0.05)).astype(np.uint8)
         ax.imshow(map_s_colored, extent=[west, east, south, north], origin='upper', interpolation='bilinear')
@@ -1207,11 +1203,11 @@ def main():
 
     # rasterPath = r".\11_23.1_20.4_42.5_40.6\heightmap_z11_lon_20.2_23.2_lat_40.6_42.6.npz"  # NMK zoom 11
     # rasterPath = r".\12_23.1_20.3_42.4_40.7\heightmap_z12_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 12
-    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.4.npz"  # NMK zoom 13
+    # rasterPath = r".\13_23.1_20.4_42.5_40.6\heightmap_z13_lon_20.3_23.1_lat_40.6_42.5.npz"  # NMK zoom 13
     # rasterPath = r".\14_23.0_20.4_42.4_40.7\heightmap_z14_lon_20.4_23.0_lat_40.7_42.4.npz" # NMK zoom 14
     # rasterPath = r".\11_16.6_13.3_47.0_45.3\heightmap_z11_lon_13.2_16.7_lat_45.2_47.0.npz" # Slovenia
     # rasterPath = r".\11_23.2_13.3_46.9_40.7\heightmap_z11_lon_13.2_23.2_lat_40.6_47.0.npz" # ex YU
-    # rasterPath = r".\9_22.1_21.8_41.6_41.2\heightmap_z9_lon_21.1_22.5_lat_41.0_42.0.npz" # tikvesko ezero debug
+    rasterPath = r".\13_3.8_3.7_51.1_51.0\heightmap_z13_lon_3.7_3.8_lat_51.0_51.1.npz" # Ghent
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
@@ -1219,31 +1215,27 @@ def main():
     # resolutionFactor, dpi = 4, int(800)
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
-    # resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
-    resolutionFactor, dpi = 1.75, int(1600)  # good middle ground
-    ### lowres settings
-    # resolutionFactor, dpi = 2, int(640)
+    resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
 
     print("Starting map generation process...")
     # mapzen tiles usually come in as Web Mercator, projcet to lat-lon rectangular projection
     elev_4326, meta_4326 = reproject_npz_to_epsg4326(rasterPath)
-
     map_data = elev_4326
     south = meta_4326['south']
     north = meta_4326['north']
     west = meta_4326['west']
     east = meta_4326['east']
-    resolution_lat = meta_4326['resolution_lat_deg']
-    resolution_lon = meta_4326['resolution_lon_deg']
-
+    resolution = meta_4326['resolution_lon_deg']
+    print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
     print("Raster and metadata loaded!")
+
+    # subsample if working with lots of tiles or large regions
     subsample = 1
     from skimage.transform import rescale
     map_s = rescale(map_data, 1/subsample, anti_aliasing=True)
     map_s[map_s <= -1] = - np.max(map_s) * 1  # we're not going to draw underwater structures, set water to -3% max height (so that 0asl is rendered green in terrain cmap)
 
-    print(f"Map boundaries: North={north:.2f}, South={south:.2f}, West={west:.2f}, East={east:.2f}")
-
+    # fetch the overlays from OSM, use = None if a specific class is not needed
     places_gdf = load_or_fetch("places", rasterPath, south, north, west, east, get_places_from_osm)
     roads_gdf = load_or_fetch("roads", rasterPath, south, north, west, east, get_roads_from_osm)
     structures_gdf = load_or_fetch("structures", rasterPath, south, north, west, east, get_structures_from_osm)
@@ -1254,18 +1246,18 @@ def main():
     airports_gdf = load_or_fetch("airports", rasterPath, south, north, west, east, get_airports_osm2geojson)
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
-
-
-    # Apply color exaggeration
+    # set True for hill shading
     exagerateTerrain = True
+    # the main visualizer
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
                                         south, west, north,
-                                        east, dpi=dpi, resolutionFactor=resolutionFactor, resolution_lat=resolution_lat,
-                                        resolution_lon=resolution_lon, exagerateTerrain=exagerateTerrain)
+                                        east, dpi=dpi, resolutionFactor=resolutionFactor, resolution=resolution,
+                                        exagerateTerrain=exagerateTerrain)
 
+    # output filename with the extent and map settings
     output_filename = (
-        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution_lat}_ex={exagerateTerrain}'
+        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution}_ex={exagerateTerrain}'
         f'_E={format(east, ".3f").replace(".", ",")}'
         f'_W={format(west, ".3f").replace(".", ",")}'
         f'_N={format(north, ".3f").replace(".", ",")}'
