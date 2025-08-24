@@ -580,9 +580,9 @@ def get_mountain_peaks_osm2geojson(lat1, lat2, lon1, lon2):
     query = (
         f'[out:json][timeout:180];'
         f'('
-        f'node["natural"="peak"]["name"]({lat1},{lon1},{lat2},{lon2});'
-        f'way["natural"="peak"]["name"]({lat1},{lon1},{lat2},{lon2});'
-        f'relation["natural"="peak"]["name"]({lat1},{lon1},{lat2},{lon2});'
+        f'node["natural"="peak"]({lat1},{lon1},{lat2},{lon2});'
+        f'way["natural"="peak"]({lat1},{lon1},{lat2},{lon2});'
+        f'relation["natural"="peak"]({lat1},{lon1},{lat2},{lon2});'
         f')->.a;'
         f'(.a;>;rel.a;>;);'
         f'out meta;'
@@ -1209,7 +1209,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks (Haversine KDTree)...")
-    min_peak_label_distance_km = 1.0
+    min_peak_label_distance_km = 0.75
     placed_coords = []
     if mountain_peaks_gdf is not None and not mountain_peaks_gdf.empty:
         texts = []
@@ -1221,12 +1221,22 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             lambda row: row.geometry if row.geometry.geom_type == "Point" else row.geometry.representative_point(),
             axis=1
         )
+        # extract elevations, sort in descending order
+        eles = mountain_peaks_gdf['tags'].apply(lambda tags: tags.get("ele"))
+        numeric_eles = pd.to_numeric(eles, errors='coerce', downcast='float')
+        mountain_peaks_gdf['elevation_m'] = numeric_eles
+        mountain_peaks_gdf = mountain_peaks_gdf.sort_values(by='elevation_m', ascending=False, na_position='last')
+        eles = mountain_peaks_gdf['tags'].apply(lambda tags: tags.get("ele"))
 
         # Extract coordinates and tags in a vectorized manner
         x_coords = mountain_peaks_gdf['geom_to_use'].apply(lambda geom: geom.x)
         y_coords = mountain_peaks_gdf['geom_to_use'].apply(lambda geom: geom.y)
         names = mountain_peaks_gdf['tags'].apply(lambda tags: tags.get("name", ""))
-        eles = mountain_peaks_gdf['tags'].apply(lambda tags: tags.get("ele"))
+        mountain_peaks_gdf['name'] = names
+
+        names = mountain_peaks_gdf['tags'].apply(lambda tags: tags.get("name", ""))# make name tag based on their elevation for peaks that have no name
+        mountain_peaks_gdf["name"] = mountain_peaks_gdf.apply(lambda r: r["name"] if r.get("name") not in [None, ""] else (str(r.get("tags", {}).get("ele")) + " m" if r.get("tags", {}).get("ele") else None), axis=1)
+        names = mountain_peaks_gdf.name
 
         # Filter out rows with no name
         valid_peaks = mountain_peaks_gdf[names != ""]
@@ -1311,7 +1321,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
 
-    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.5.npz"  # NMK zoom 11
+    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.4.npz"  # NMK zoom 11
 
 
     ### hires settings
@@ -1321,7 +1331,7 @@ def main():
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
     # resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
-    resolutionFactor, dpi = 1.5, int(1500)  # good middle ground
+    resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
     # resolutionFactor, dpi = 2.0, int(500)  # debug
 
     print("Starting map generation process...")
@@ -1356,7 +1366,7 @@ def main():
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
     # set True for hill shading
-    exagerateTerrain = True
+    exagerateTerrain = False
     # the main visualizer
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
