@@ -24,6 +24,7 @@ from shapely.ops import polygonize, unary_union, linemerge  # Added for polygoni
 import colorsys
 import matplotlib.patheffects as patheffects
 from matplotlib.colors import LightSource
+from adjustText import adjust_text
 
 # projDataDirPath = datadir.get_data_dir()
 # os.environ['PROJ_DATA'] = projDataDirPath
@@ -616,7 +617,7 @@ def load_or_fetch(filename_prefix, rasterPath, south, north, west, east, fetch_f
 
 def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf, mountain_peaks_gdf,
                               railroads_gdf, airports_gdf, country_boundaries_gdf, map_s, south, west, north, east, dpi,
-                              resolutionFactor, resolution, exagerateTerrain):
+                              resolutionFactor, resolution, exagerateTerrain, autoAdjustText):
     fig_width, fig_height = resolutionFactor * 10, resolutionFactor * 10
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=100)
 
@@ -632,9 +633,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     mountainPeaksMarkerSize = .2 * resolutionFactor
 
     # pre smooth the terrain map to avoid exaggerating noise
-    # smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
-    # map_s_smooth = smoothed(map_s, 3)
-    map_s_smooth = map_s
+    smoothed = lambda arr, w: gaussian_filter(arr, sigma=w / 6, truncate=w / (2 * (w / 6)))
+    map_s_smooth = smoothed(map_s, 8)
+    # map_s_smooth = map_s
 
     heightLimit = 2800 # minimum sea level, maximum ground level
     seaBottom = -heightLimit*0.05
@@ -660,11 +661,11 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     levels_mini = np.arange(min_val, max_val, 20)
     levels_thin = np.arange(min_val, max_val, 100)
 
-    # print("Drawing mini contours with very thin lines...");
-    # contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.4, linewidths=0.02)
-    # print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
+    print("Drawing mini contours with very thin lines...");
+    contours_mini = ax.contour(X, Y, map_s_smooth, levels=levels_mini, colors='0.65', alpha=0.6, linewidths=0.02)
+    print(f"Mini contours drawn: {len(contours_mini.collections)} levels")
     print("Drawing thin contours with thin lines...");
-    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.5, linewidths=0.05)
+    contours_thin = ax.contour(X, Y, map_s_smooth, levels=levels_thin, colors='0.65', alpha=0.7, linewidths=0.05)
     print(f"Thin contours drawn: {len(contours_thin.collections)} levels")
 
     max_distance_km = 2.0  # spacing between labels
@@ -726,6 +727,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
     if structures_gdf is not None and not structures_gdf.empty:
         structures_gdf.plot(ax=ax, edgecolor='0.4', facecolor='0.6', alpha=0.5, linewidth=0.05)
         ax.collections[-1].set_rasterized(True)
+
+    ### keep track of all rendered labels (water, rivers, peaks)
+    allTexts = [] # in the end we will use the library adjustText to de-jumble them
 
     print("Plotting water bodies...")
     if water_bodies_gdf is not None and not water_bodies_gdf.empty:
@@ -798,7 +802,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             # Convert desired distance in km to radians
             radius_rad = min_water_label_distance_km / earth_radius_km
 
-            for (x_lon, y_lat, label, area) in texts_for_plot:
+            for id_i, (x_lon, y_lat, label, area) in enumerate(texts_for_plot):
                 # Get the original lat, lon in degrees for this point
                 current_lat_deg, current_lon_deg = y_lat, x_lon
 
@@ -825,7 +829,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     # Adjust the font size
                     scaled_font_size = waterBodiesFontSize * area_scale_factor
 
-                    ax.text(x_lon, y_lat, label,
+                    allTexts.append(ax.text(x_lon, y_lat, label,
                             fontsize=scaled_font_size,  # Use the scaled font size
                             fontfamily="serif", style="italic",
                             color=(0, 0.3, 0.6), alpha=0.8,
@@ -833,9 +837,13 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             path_effects=[
                                 patheffects.withStroke(linewidth=waterBodiesFontSize * 0.1, foreground=(0.2, 0.5, 0.8),
                                                        capstyle="round")],
-                            rasterized=True, zorder=4)
+                            rasterized=True, zorder=4))
                     # Add the degree coordinates of the placed label to the list
                     placed_coords_deg.append((current_lat_deg, current_lon_deg))
+                    # adjust the label positions from time to time to avoid overlaps
+                    if autoAdjustText and np.mod(id_i, 100) == 0:
+                        print("Re-adjusting label positions...")
+                        adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
     print("Plotting rivers and their labels...")
     # Parameters are now in meters for consistency with projected CRS
@@ -939,7 +947,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     # Convert the label's projected coordinates back to lat/lon for plotting on the basemap
                     latlon_point = point_gdf.to_crs(epsg=4326)
 
-                    ax.text(
+                    allTexts.append(ax.text(
                         max(west, min(latlon_point.geometry.x.iloc[0], east)),
                         max(south, min(latlon_point.geometry.y.iloc[0], north)),
                         name,
@@ -954,7 +962,11 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         fontfamily='serif',
                         rotation=label['angle'],
                         rasterized=True,
-                    )
+                    ))
+                    # adjust the label positions from time to time to avoid overlaps
+                    if autoAdjustText and np.mod(idx, 100) == 0:
+                        print("Re-adjusting label positions...")
+                        adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
         if not smaller_waterways.empty:
             smaller_waterways.to_crs(epsg=4326).plot(
@@ -978,15 +990,15 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             "unclassified":{"width": 0.1, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
             "service":     {"width": 0.1,  "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
 
-            "footway":      {"width": 0.1, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 4, "linestyle": '--'},
-            "path":         {"width": 0.1, "color": (0.6, 0.6, 0.6), "alpha": 0.7, "zorder": 4, "linestyle": ':'},
-            "cycleway":     {"width": 0.1, "color": (0.4, 0.6, 0.4), "alpha": 0.8, "zorder": 4, "linestyle": '-'},
-            "bridleway":    {"width": 0.1, "color": (0.6, 0.4, 0.2), "alpha": 0.7, "zorder": 4, "linestyle": '-.'},
-            "steps":        {"width": 0.07, "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 4, "linestyle": ':'},
-            "pedestrian":   {"width": 0.1 ,  "color": (0.5, 0.5, 0.5), "alpha": 0.8, "zorder": 4, "linestyle": '-'},
-            "track":        {"width": 0.1, "color": (0.7, 0.6, 0.5), "alpha": 0.6, "zorder": 3, "linestyle": '-'},
-            "construction": {"width": 0.1, "color": (0.8, 0.5, 0.1), "alpha": 0.5, "zorder": 2, "linestyle": ':'},
-            "proposed":     {"width": 0.1, "color": (0.5, 0.5, 0.8), "alpha": 0.4, "zorder": 2, "linestyle": '--'},
+            "footway":      {"width": 0.1, "fill_color": (0.5, 0.5, 0.5), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '--'},
+            "path":         {"width": 0.1, "fill_color": (0.6, 0.6, 0.6), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": ':'},
+            "cycleway":     {"width": 0.1, "fill_color": (0.4, 0.6, 0.4), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "bridleway":    {"width": 0.1, "fill_color": (0.6, 0.4, 0.2), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-.'},
+            "steps":        {"width": 0.07,"fill_color": (0.5, 0.5, 0.5), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": ':'},
+            "pedestrian":   {"width": 0.1 ,"fill_color": (0.5, 0.5, 0.5), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "track":        {"width": 0.1, "fill_color": (0.7, 0.6, 0.5), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "construction": {"width": 0.1, "fill_color": (0.8, 0.5, 0.1), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": ':'},
+            "proposed":     {"width": 0.1, "fill_color": (0.5, 0.5, 0.8), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '--'},
         }
 
         for road_type in tqdm(roads_gdf["highway"].unique(), desc="Drawing roads", dynamic_ncols=True, leave=False):
@@ -999,12 +1011,18 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
                 if "color" in style:
                     subset.plot(
+                        # ax=ax,
+                        # linewidth=style["width"],
+                        # edgecolor=style["color"],
+                        # alpha=style["alpha"],
+                        # linestyle=style["linestyle"],
+                        # zorder=style["zorder"]
                         ax=ax,
                         linewidth=style["width"],
-                        edgecolor=style["color"],
-                        alpha=style["alpha"],
-                        linestyle=style["linestyle"],
-                        zorder=style["zorder"]
+                        edgecolor=style["fill_color"],
+                        alpha=style["alpha_fill"],
+                        zorder=style["zorder_fill"],
+                        linestyle=style["linestyle"]
                     )
                     ax.collections[-1].set_rasterized(True)
                 else:
@@ -1185,7 +1203,7 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
         # Plot Aerodrome as a symbol at the centroid of the feature (Point or Polygon)
         if not aerodrome_gdf.empty:
-            for _, row in aerodrome_gdf.iterrows():
+            for idx, row in aerodrome_gdf.iterrows():
                 geom = row.geometry
                 # Use centroid for Polygons, or use point directly
                 if geom.geom_type == 'Point':
@@ -1201,11 +1219,15 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                 words = re.split(r"[ -]", row.get('tags', {}).get('name', ''))
                 name = "\n".join(" ".join(words[i:i + 2]) for i in range(0, len(words), 2))
                 if name:
-                    ax.text(x, y, name,
+                    allTexts.append(ax.text(x, y, name,
                             fontsize=airportsFontSize,
                             ha='center', va='bottom',
                             color='darkblue', fontfamily='serif', style='italic',
-                            zorder=8, alpha=.8, rasterized=True)
+                            zorder=8, alpha=.8, rasterized=True))
+                    # adjust the label positions from time to time to avoid overlaps
+                    if autoAdjustText and np.mod(idx, 100) == 0:
+                        print("Re-adjusting label positions...")
+                        adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks (Haversine KDTree)...")
@@ -1261,17 +1283,21 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         # Radius in radians
         radius_rad = min_peak_label_distance_km / 6371.0
         # Place labels avoiding close neighbors
-        for (x, y, label), (lat_deg, lon_deg) in tqdm(zip(texts, coords_deg),
+        for idx, ((x, y, label), (lat_deg, lon_deg)) in enumerate(tqdm(zip(texts, coords_deg),
                                                       total=len(texts),
                                                       desc="Mountain peak labels",
-                                                      dynamic_ncols=True):
+                                                      dynamic_ncols=True)):
             lat_rad, lon_rad = np.radians([lat_deg, lon_deg])
             idxs = tree.query_ball_point([lat_rad, lon_rad], r=radius_rad)
             if all(tuple(coords_deg[i]) not in placed_coords for i in idxs):
-                ax.text(x, y, label,
+                allTexts.append(ax.text(x, y, label,
                         fontsize=mountainPeaksFontSize, ha="center", va="bottom",
                         color="darkgreen", fontfamily="serif", style="italic",
-                        zorder=7, rasterized=True)
+                        zorder=7, rasterized=True))
+                # adjust the label positions from time to time to avoid overlaps
+                if autoAdjustText and np.mod(idx, 100) == 0:
+                    print("Re-adjusting label positions...")
+                    adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
                 placed_coords.append((lat_deg, lon_deg))
 
     # --- Plot country boundaries ---
@@ -1331,7 +1357,7 @@ def main():
     # resolutionFactor, dpi = 3, int(1066)
     # resolutionFactor, dpi = 2, int(1600)
     # resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
-    resolutionFactor, dpi = 2.0, int(1500)  # good middle ground
+    resolutionFactor, dpi = 1.5, int(1800)  # good middle ground
     # resolutionFactor, dpi = 2.0, int(500)  # debug
 
     print("Starting map generation process...")
@@ -1366,13 +1392,15 @@ def main():
     country_boundaries_gdf = load_or_fetch("country_boundaries", rasterPath, south, north, west, east, get_country_boundaries_from_osm)
 
     # set True for hill shading
-    exagerateTerrain = False
+    exagerateTerrain = True
+    # set True for text label auto adjusting (slower)
+    autoAdjustText = False #todo
     # the main visualizer
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
                                         south, west, north,
                                         east, dpi=dpi, resolutionFactor=resolutionFactor, resolution=resolution,
-                                        exagerateTerrain=exagerateTerrain)
+                                        exagerateTerrain=exagerateTerrain, autoAdjustText=autoAdjustText)
 
     # output filename with the extent and map settings
     output_filename = (
