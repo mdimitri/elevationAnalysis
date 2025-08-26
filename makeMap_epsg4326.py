@@ -841,9 +841,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                     # Add the degree coordinates of the placed label to the list
                     placed_coords_deg.append((current_lat_deg, current_lon_deg))
                     # adjust the label positions from time to time to avoid overlaps
-                    if autoAdjustText and np.mod(id_i, 100) == 0:
+                    if autoAdjustText and np.mod(id_i, 10) == 0:
                         print("Re-adjusting label positions...")
-                        adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
+                        allTexts, _ = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
     print("Plotting rivers and their labels...")
     # Parameters are now in meters for consistency with projected CRS
@@ -964,9 +964,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         rasterized=True,
                     ))
                     # adjust the label positions from time to time to avoid overlaps
-                    if autoAdjustText and np.mod(idx, 100) == 0:
+                    if autoAdjustText and np.mod(idx, 10) == 0:
                         print("Re-adjusting label positions...")
-                        adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
+                        allTexts, _  = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
         if not smaller_waterways.empty:
             smaller_waterways.to_crs(epsg=4326).plot(
@@ -1225,9 +1225,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             color='darkblue', fontfamily='serif', style='italic',
                             zorder=8, alpha=.8, rasterized=True))
                     # adjust the label positions from time to time to avoid overlaps
-                    if autoAdjustText and np.mod(idx, 100) == 0:
+                    if autoAdjustText and np.mod(idx, 10) == 0:
                         print("Re-adjusting label positions...")
-                        adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
+                        allTexts, _  = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks (Haversine KDTree)...")
@@ -1295,9 +1295,9 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         color="darkgreen", fontfamily="serif", style="italic",
                         zorder=7, rasterized=True))
                 # adjust the label positions from time to time to avoid overlaps
-                if autoAdjustText and np.mod(idx, 100) == 0:
+                if autoAdjustText and np.mod(idx, 10) == 0:
                     print("Re-adjusting label positions...")
-                    adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
+                    allTexts, _  = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
                 placed_coords.append((lat_deg, lon_deg))
 
     # --- Plot country boundaries ---
@@ -1394,7 +1394,7 @@ def main():
     # set True for hill shading
     exagerateTerrain = True
     # set True for text label auto adjusting (slower)
-    autoAdjustText = False #todo
+    autoAdjustText = True
     # the main visualizer
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
