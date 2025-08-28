@@ -301,8 +301,22 @@ def get_structures_from_osm(lat1, lat2, lon1, lon2):
 
 
 def get_roads_from_osm(lat1, lat2, lon1, lon2):
-    query = f'[out:json];way["highway"]({lat1},{lon1},{lat2},{lon2});out geom;'
+    # query = f'[out:json];way["highway"]({lat1},{lon1},{lat2},{lon2});out geom;'
     # query = f'[out:json];way["highway"~"motorway|primary|secondary|tertiary|trunk|residential|unclassified|service"]({lat1},{lon1},{lat2},{lon2});out geom;'
+    # List of common highway types for cars, pedestrians, bikes, and other transport.
+    highway_values = (
+        "motorway|trunk|primary|secondary|tertiary|unclassified|"
+        "residential|service|motorway_link|trunk_link|primary_link|"
+        "secondary_link|tertiary_link|living_street|pedestrian|"
+        "cycleway|path|footway|track|bridleway|steps"
+    )
+    query = f"""
+    [out:json];
+    (
+      way["highway"~"{highway_values}"]({lat1},{lon1},{lat2},{lon2});
+    );
+    out geom;
+    """
     return _fetch_data_from_osm(query, (lat1, lat2, lon1, lon2), lambda elements: gpd.GeoDataFrame([
         {"highway": el["tags"].get("highway"),
          "geometry": LineString([(pt["lon"], pt["lat"]) for pt in el["geometry"]])}
@@ -1053,6 +1067,14 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
             "track":        {"width": 0.1, "fill_color": (0.7, 0.6, 0.5), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
             "construction": {"width": 0.1, "fill_color": (0.8, 0.5, 0.1), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": ':'},
             "proposed":     {"width": 0.1, "fill_color": (0.5, 0.5, 0.8), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '--'},
+
+            "motorway_link": {"width": 0.35, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "trunk_link": {"width": 0.25, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "primary_link": {"width": 0.25, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "secondary_link": {"width": 0.2, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "tertiary_link": {"width": 0.15, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "living_street": {"width": 0.1, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
+            "bus_guideway": {"width": 0.1, "fill_color": (0.3, 0.3, 0.3), "line_color": (0.7, 0.7, 0.5), "alpha_fill": 0.75, "alpha_line": 1, "zorder_fill": 4, "zorder_line": 5, "linestyle": '-'},
         }
 
         for road_type in tqdm(roads_gdf["highway"].unique(), desc="Drawing roads", dynamic_ncols=True, leave=False):
