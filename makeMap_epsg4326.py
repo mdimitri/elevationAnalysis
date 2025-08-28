@@ -3,6 +3,8 @@ from scipy.ndimage import gaussian_filter
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, MultiLineString
+from shapely.strtree import STRtree
+from itertools import combinations
 import requests, pickle
 import osm2geojson
 from matplotlib.colors import LinearSegmentedColormap
@@ -24,7 +26,7 @@ from shapely.ops import polygonize, unary_union, linemerge  # Added for polygoni
 import colorsys
 import matplotlib.patheffects as patheffects
 from matplotlib.colors import LightSource
-from adjustText import adjust_text
+# from adjustText import adjust_text
 
 # projDataDirPath = datadir.get_data_dir()
 # os.environ['PROJ_DATA'] = projDataDirPath
@@ -90,6 +92,66 @@ def haversine_vectorized(lat1, lon1, lat2, lon2):
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     return R * c
 
+def get_text_corners(text, ax):
+    # text.figure.canvas.draw()
+    bbox = text.get_window_extent()
+    cx, cy = (bbox.x0+bbox.x1)/2, (bbox.y0+bbox.y1)/2
+    corners = np.array([[bbox.x0-cx,bbox.y0-cy],[bbox.x1-cx,bbox.y0-cy],
+                        [bbox.x1-cx,bbox.y1-cy],[bbox.x0-cx,bbox.y1-cy]])
+    angle = np.deg2rad(text.get_rotation())
+    R = np.array([[np.cos(angle),-np.sin(angle)],[np.sin(angle),np.cos(angle)]])
+    return ax.transData.inverted().transform(corners @ R.T + [cx,cy]), text.get_position()
+
+def find_overlaps(corners_list):
+    polys = [Polygon(c) for c in corners_list]
+    tree = STRtree(polys)
+    overlaps = []
+    for i, p in enumerate(polys):
+        for j in tree.query(p):
+            if i < j and p.intersects(polys[j]):
+                overlaps.append([i, j])
+    return overlaps
+
+# def repel_labels(allTexts, corners_list, overlaps, repelFactor = 0.5):
+#     centers = np.array([np.mean(c, axis=0) for c in corners_list])
+#     for i, txt in enumerate(allTexts):
+#         # find indices of labels that overlap with i
+#         group = [j for pair in overlaps for j in pair if i in pair and j != i]
+#         if not group:
+#             continue
+#         group_center = centers[group].mean(axis=0)
+#         pos = np.array(txt.get_position())
+#         vec = pos - group_center
+#         txt.set_position(pos + repelFactor*vec)
+
+def repel_labels(allTexts, corners_list, overlaps, repelFactor=0.5):
+    """
+    Adjusts positions of overlapping labels by repelling them from their group center.
+    """
+    centers = np.array([np.mean(c, axis=0) for c in corners_list])
+    # Create a copy of current positions to calculate repulsion vectors
+    # This ensures all repulsions in THIS step are based on positions from the START of this step
+    # The actual set_position updates will be applied as we iterate.
+    current_text_positions = np.array([txt.get_position() for txt in allTexts])
+
+    for i, txt in enumerate(allTexts):
+        # find indices of labels that overlap with i
+        group_indices = [j for pair in overlaps for j in pair if i in pair and j != i]
+        if not group_indices:
+            continue
+
+        # Calculate the center of the group of labels that overlap with 'txt'
+        # This uses the 'centers' from the start of the current repel_labels call
+        group_center = centers[group_indices].mean(axis=0)
+
+        # Get the current position of the label 'txt' (from the start of this iteration's snapshot)
+        pos = current_text_positions[i]
+
+        # Calculate the vector from the group_center to the label's position
+        vec = pos - group_center
+
+        # Apply repulsion: move the label away from the group center
+        txt.set_position(pos + repelFactor * vec)
 
 def reproject_npz_to_epsg4326(npz_path):
     data = np.load(npz_path)
@@ -840,10 +902,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             rasterized=True, zorder=4))
                     # Add the degree coordinates of the placed label to the list
                     placed_coords_deg.append((current_lat_deg, current_lon_deg))
-                    # adjust the label positions from time to time to avoid overlaps
-                    if autoAdjustText and np.mod(id_i, 10) == 0:
-                        print("Re-adjusting label positions...")
-                        allTexts, _ = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
     print("Plotting rivers and their labels...")
     # Parameters are now in meters for consistency with projected CRS
@@ -963,10 +1021,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         rotation=label['angle'],
                         rasterized=True,
                     ))
-                    # adjust the label positions from time to time to avoid overlaps
-                    if autoAdjustText and np.mod(idx, 10) == 0:
-                        print("Re-adjusting label positions...")
-                        allTexts, _  = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
         if not smaller_waterways.empty:
             smaller_waterways.to_crs(epsg=4326).plot(
@@ -1224,10 +1278,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                             ha='center', va='bottom',
                             color='darkblue', fontfamily='serif', style='italic',
                             zorder=8, alpha=.8, rasterized=True))
-                    # adjust the label positions from time to time to avoid overlaps
-                    if autoAdjustText and np.mod(idx, 10) == 0:
-                        print("Re-adjusting label positions...")
-                        allTexts, _  = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
 
     # Plot mountain peaks as dark green triangles with village marker size
     print("Plotting mountain peaks (Haversine KDTree)...")
@@ -1294,10 +1344,6 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
                         fontsize=mountainPeaksFontSize, ha="center", va="bottom",
                         color="darkgreen", fontfamily="serif", style="italic",
                         zorder=7, rasterized=True))
-                # adjust the label positions from time to time to avoid overlaps
-                if autoAdjustText and np.mod(idx, 10) == 0:
-                    print("Re-adjusting label positions...")
-                    allTexts, _  = adjust_text(allTexts)  # , arrowprops=dict(arrowstyle='->', color='gray'))
                 placed_coords.append((lat_deg, lon_deg))
 
     # --- Plot country boundaries ---
@@ -1325,6 +1371,19 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
         )
         ax.collections[-1].set_rasterized(True)
 
+    ## adjust label positions
+    if autoAdjustText:
+        print("Adjusting label positions to avoid overlap...")
+        repelSteps = 30
+        pbar = tqdm(range(repelSteps))
+        for _ in pbar:
+            corners_list, centers_list = zip(*[get_text_corners(t, ax) for t in allTexts])
+            overlaps = find_overlaps(corners_list)
+            overlapPercent = np.size(np.unique(np.array(overlaps)[:, 0])) / len(allTexts) if overlaps else 0
+            repel_labels(allTexts, corners_list, overlaps, repelFactor=0.01)
+            fig.canvas.draw()
+            pbar.set_postfix({"Overlap %": f"{overlapPercent * 100:.1f}"})
+
     fig.axes[0].axis('off')
     plt.tight_layout()
 
@@ -1347,8 +1406,8 @@ def plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf,
 
 def main():
 
-    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.4.npz"  # NMK zoom 11
-
+    # rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.4.npz"  # NMK zoom 11
+    rasterPath = r".\13_23.1_20.4_42.4_40.8\heightmap_z13_lon_20.3_23.1_lat_40.7_42.5.npz"  # NMK zoom 11
 
     ### hires settings
     ### We have to use a scaling trick in order to render small fonts (less than 1pt)
@@ -1394,7 +1453,7 @@ def main():
     # set True for hill shading
     exagerateTerrain = True
     # set True for text label auto adjusting (slower)
-    autoAdjustText = True
+    autoAdjustText = False
     # the main visualizer
     fig, ax = plot_relief_with_features(places_gdf, roads_gdf, structures_gdf, rivers_gdf, water_bodies_gdf,
                                         mountain_peaks_gdf, railroads_gdf, airports_gdf, country_boundaries_gdf, map_s,
@@ -1404,7 +1463,7 @@ def main():
 
     # output filename with the extent and map settings
     output_filename = (
-        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution}_ex={exagerateTerrain}'
+        f'baseMap_{subsample}_{resolutionFactor}_{dpi}dpi_{resolution}_ex={exagerateTerrain}_aa={autoAdjustText}'
         f'_E={format(east, ".3f").replace(".", ",")}'
         f'_W={format(west, ".3f").replace(".", ",")}'
         f'_N={format(north, ".3f").replace(".", ",")}'
